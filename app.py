@@ -11,20 +11,16 @@ st.title("🏆 Banco de Imágenes y Actas - La Tinka")
 # --- FUNCIÓN MAESTRA DE GUARDADO PERMANENTE ---
 def sincronizar_con_github(ruta_local, ruta_github, mensaje):
     try:
-        # Usa la llave secreta que guardaste en Streamlit
         g = Github(st.secrets["GITHUB_TOKEN"])
-        # Conecta directo con tu almacén
         repo = g.get_repo("DRMMTINKA/banco-de-imagenes")
         
         with open(ruta_local, "rb") as f:
             content = f.read()
             
         try:
-            # Si el archivo ya existe (ej. actualizar el Excel), lo sobreescribe
             contents = repo.get_contents(ruta_github)
             repo.update_file(contents.path, mensaje, content, contents.sha)
         except:
-            # Si el archivo es nuevo (ej. nuevas fotos), lo crea
             repo.create_file(ruta_github, mensaje, content)
         return True
     except Exception as e:
@@ -54,18 +50,21 @@ def cargar_datos():
 
 df = cargar_datos()
 
-col_producto = next((c for c in df.columns if 'PRODUCTO' in c), None)
-col_fecha = next((c for c in df.columns if 'FECHA DE CARGA' in c), next((c for c in df.columns if 'FECHA' in c and 'PUB' not in c), None))
-col_carpeta = next((c for c in df.columns if 'CARPET' in c), None)
-col_ganador = next((c for c in df.columns if 'GANADOR' in c), None)
-col_monto = next((c for c in df.columns if 'MONTO' in c), None)
+# Detección de columnas
+col_producto = next((c for c in df.columns if 'PRODUCTO' in c), 'PRODUCTO')
+col_promotora = next((c for c in df.columns if 'PROMOTORA' in c), 'PROMOTORA')
+col_req = next((c for c in df.columns if 'CUMPLE' in c or 'REQUISIT' in c), '¿CUMPLE REQUISITOS?')
+col_fecha = next((c for c in df.columns if 'FECHA DE CARGA' in c), next((c for c in df.columns if 'FECHA' in c and 'PUB' not in c), 'FECHA DE CARGA'))
+col_carpeta = next((c for c in df.columns if 'CARPET' in c), 'NOMBRE DE CARPETA')
+col_ganador = next((c for c in df.columns if 'GANADOR' in c), 'NOMBRE GANADOR')
+col_monto = next((c for c in df.columns if 'MONTO' in c), 'MONTO')
 
 col_pub = next((c for c in df.columns if 'PUBLICACI' in c), None)
 if not col_pub:
     df['FECHA PUBLICACIÓN'] = ""
     col_pub = 'FECHA PUBLICACIÓN'
 
-if col_fecha:
+if col_fecha in df.columns:
     df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
 
 def cargar_terminales():
@@ -86,7 +85,7 @@ df_terminales = cargar_terminales()
 # BARRA LATERAL IZQUIERDA Y FORMULARIO
 # ---------------------------------------------------------
 st.sidebar.header("🔍 Buscador")
-if col_producto:
+if col_producto in df.columns:
     productos = sorted([p for p in df[col_producto].unique() if str(p).strip() != ""])
     prod_seleccionado = st.sidebar.multiselect("Filtrar por PRODUCTO:", productos)
     df_filtrado = df[df[col_producto].isin(prod_seleccionado)] if prod_seleccionado else df
@@ -108,8 +107,11 @@ if term_seleccionado != "":
     st.sidebar.success(f"**Sede:** {nombre_auto}\n**Sup:** {super_auto}")
 
 with st.sidebar.form("form_nuevo"):
-    nuevo_producto = st.text_input("Producto")
+    # NUEVOS CAMPOS Y DESPLEGABLES
+    nuevo_producto = st.selectbox("Producto", ["TINKA", "KÁBALA", "RAPITINKA", "GANA DIARIO"])
+    nueva_promotora = st.text_input("Nombre de la Promotora")
     nuevo_monto = st.text_input("Monto (Ej: 100)")
+    nuevo_requisitos = st.selectbox("¿Cumple Requisitos?", ["SÍ", "NO"])
     nueva_fecha = st.date_input("Fecha de Carga")
     nuevo_ganador = st.text_input("Nombre del Ganador")
     nueva_carpeta = st.text_input("Código de Carpeta (Ej: 20261006-01)")
@@ -123,30 +125,29 @@ with st.sidebar.form("form_nuevo"):
             st.error("Falta seleccionar Terminal o ingresar Código de Carpeta.")
         else:
             with st.spinner("Sincronizando con GitHub... Por favor espera unos segundos."):
-                # 1. Guardar local temporalmente
                 os.makedirs(nueva_carpeta, exist_ok=True)
                 for foto in fotos:
                     ruta_local_foto = os.path.join(nueva_carpeta, foto.name)
                     with open(ruta_local_foto, "wb") as f:
                         f.write(foto.getbuffer())
-                    # Enviar foto a GitHub
                     sincronizar_con_github(ruta_local_foto, f"{nueva_carpeta}/{foto.name}", f"Subida foto {foto.name}")
                 
-                # 2. Actualizar Excel
+                # Actualización inteligente de columnas en Excel
                 nueva_fila = {c: "" for c in df.columns} 
-                if 'TERMINAL' in df.columns: nueva_fila['TERMINAL'] = term_seleccionado
-                if 'NOMBRE DE TERMINAL' in df.columns: nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
-                if 'SUPERVISOR' in df.columns: nueva_fila['SUPERVISOR'] = super_auto
-                if col_producto: nueva_fila[col_producto] = nuevo_producto
-                if col_monto: nueva_fila[col_monto] = nuevo_monto
-                if col_fecha: nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
-                if col_ganador: nueva_fila[col_ganador] = nuevo_ganador
-                if col_carpeta: nueva_fila[col_carpeta] = nueva_carpeta
+                nueva_fila['TERMINAL'] = term_seleccionado
+                nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
+                nueva_fila['SUPERVISOR'] = super_auto
+                nueva_fila[col_producto] = nuevo_producto
+                nueva_fila[col_promotora] = nueva_promotora
+                nueva_fila[col_monto] = nuevo_monto
+                nueva_fila[col_req] = nuevo_requisitos
+                nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
+                nueva_fila[col_ganador] = nuevo_ganador
+                nueva_fila[col_carpeta] = nueva_carpeta
                 
                 df_final = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
                 df_final.to_excel("datos.xlsx", index=False)
                 
-                # Enviar Excel a GitHub
                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
                 
                 st.success(f"✅ ¡{nuevo_ganador} guardado en la base de datos principal de forma permanente!")
@@ -157,7 +158,7 @@ with st.sidebar.form("form_nuevo"):
 tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales"])
 
 with tab1:
-    if col_fecha:
+    if col_fecha in df_filtrado.columns:
         df_mostrar = df_filtrado.sort_values(by=col_fecha, ascending=False)
     else:
         df_mostrar = df_filtrado.iloc[::-1]
@@ -166,13 +167,13 @@ with tab1:
     st.markdown("---")
     st.subheader("📥 Descargar Archivos")
     
-    if col_carpeta and col_ganador:
+    if col_carpeta in df.columns and col_ganador in df.columns:
         for index, row in df_mostrar.iterrows():
             carpeta = str(row[col_carpeta]).strip()
             ganador = str(row[col_ganador]).strip()
             
-            str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
-            str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
+            str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto in df.columns and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
+            str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto in df.columns and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
             
             str_pub = ""
             val_pub = str(row[col_pub]).strip().lower()
@@ -184,7 +185,7 @@ with tab1:
                 esta_publicado = True
             
             etiqueta = ""
-            if col_fecha and pd.notna(row[col_fecha]):
+            if col_fecha in df.columns and pd.notna(row[col_fecha]):
                 if (datetime.now() - row[col_fecha]).days <= 3:
                     etiqueta = " 🆕 ¡NUEVA FOTO!"
             
@@ -226,7 +227,7 @@ with tab2:
     st.subheader("📈 Panel de Estadísticas")
     st.info("💡 Los gráficos responden automáticamente al filtro de 'PRODUCTO' de la barra lateral.")
     
-    if col_fecha:
+    if col_fecha in df.columns:
         fechas_validas = df[col_fecha].dropna()
         if not fechas_validas.empty:
             rango_fechas = st.date_input("Rango de fechas para estadísticas:", [fechas_validas.min().date(), fechas_validas.max().date()])
