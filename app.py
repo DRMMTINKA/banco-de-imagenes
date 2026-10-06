@@ -34,6 +34,7 @@ col_producto = next((c for c in df.columns if 'PRODUCTO' in c), None)
 col_fecha = next((c for c in df.columns if 'FECHA' in c), None)
 col_carpeta = next((c for c in df.columns if 'CARPET' in c), None)
 col_ganador = next((c for c in df.columns if 'GANADOR' in c), None)
+col_monto = next((c for c in df.columns if 'MONTO' in c), None) # Nueva detección del Monto
 
 if col_fecha:
     df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
@@ -59,7 +60,6 @@ st.sidebar.header("🔍 Buscador")
 if col_producto:
     productos = sorted([p for p in df[col_producto].unique() if str(p).strip() != ""])
     prod_seleccionado = st.sidebar.multiselect("Filtrar por PRODUCTO:", productos)
-    # df_filtrado controla TODO lo que se muestra (Base de datos y Ranking)
     df_filtrado = df[df[col_producto].isin(prod_seleccionado)] if prod_seleccionado else df
 else:
     df_filtrado = df
@@ -80,6 +80,7 @@ if term_seleccionado != "":
 
 with st.sidebar.form("form_nuevo"):
     nuevo_producto = st.text_input("Producto")
+    nuevo_monto = st.text_input("Monto (Ej: 100)") # Nueva casilla para el Monto
     nueva_fecha = st.date_input("Fecha de Carga")
     nuevo_ganador = st.text_input("Nombre del Ganador")
     nueva_carpeta = st.text_input("Código de Carpeta (Ej: 20261006-01)")
@@ -103,6 +104,7 @@ with st.sidebar.form("form_nuevo"):
             if 'NOMBRE DE TERMINAL' in df.columns: nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
             if 'SUPERVISOR' in df.columns: nueva_fila['SUPERVISOR'] = super_auto
             if col_producto: nueva_fila[col_producto] = nuevo_producto
+            if col_monto: nueva_fila[col_monto] = nuevo_monto # Guarda el Monto
             if col_fecha: nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
             if col_ganador: nueva_fila[col_ganador] = nuevo_ganador
             if col_carpeta: nueva_fila[col_carpeta] = nueva_carpeta
@@ -131,13 +133,18 @@ with tab1:
             carpeta = str(row[col_carpeta]).strip()
             ganador = str(row[col_ganador]).strip()
             
+            # Formateo visual del Producto y el Monto
+            str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
+            str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
+            
             etiqueta = ""
             if col_fecha and pd.notna(row[col_fecha]):
                 if (datetime.now() - row[col_fecha]).days <= 3:
                     etiqueta = " 🆕 ¡NUEVA FOTO!"
             
             if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
-                with st.expander(f"👤 {ganador} (Código: {carpeta}){etiqueta}"):
+                # Se agregan el producto y monto directamente al título de la barra
+                with st.expander(f"👤 {ganador}{str_prod}{str_monto} (Código: {carpeta}){etiqueta}"):
                     archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
                     
                     if len(archivos) > 0:
@@ -153,7 +160,6 @@ with tab2:
     st.info("💡 El gráfico responde automáticamente al filtro de 'PRODUCTO' de la barra lateral izquierda.")
     
     if 'NOMBRE DE TERMINAL' in df.columns and col_fecha:
-        # Usamos df_filtrado en lugar de df para que el gráfico respete el buscador lateral
         fechas_validas = df[col_fecha].dropna()
         if not fechas_validas.empty:
             rango_fechas = st.date_input("Rango de fechas:", [fechas_validas.min().date(), fechas_validas.max().date()])
@@ -167,16 +173,13 @@ with tab2:
             ranking.columns = ['Terminal', 'Ganadores']
             
             if not ranking.empty:
-                # Botones para cambiar entre Barras y Torta
                 tipo_grafico = st.radio("Selecciona el tipo de gráfico:", ["📊 Barras", "🥧 Torta"], horizontal=True)
-                
                 col_grafico, col_tabla = st.columns([2, 1])
                 
                 with col_grafico: 
                     if tipo_grafico == "📊 Barras":
                         st.bar_chart(data=ranking.head(10), x='Terminal', y='Ganadores')
                     else:
-                        # Gráfico de torta interactivo con Plotly
                         fig = px.pie(ranking.head(10), values='Ganadores', names='Terminal', hole=0.3)
                         fig.update_traces(textposition='inside', textinfo='percent+label')
                         fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
