@@ -80,7 +80,7 @@ if col_carpeta and col_ganador:
                     columnas = st.columns(len(archivos))
                     for i, archivo in enumerate(archivos):
                         ruta_archivo = os.path.join(carpeta, archivo)
-                        if os.path.isfile(ruta_archivo):
+                        if os.path.isfile(ruta_archivo) and archivo.lower().endswith(('.png', '.jpg', '.jpeg')):
                             with open(ruta_archivo, "rb") as f:
                                 columnas[i].download_button(
                                     label=f"⬇️ Descargar {archivo}",
