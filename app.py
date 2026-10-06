@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Configuración inicial
 st.set_page_config(page_title="Banco de Imágenes - La Tinka", layout="wide")
 st.title("🏆 Banco de Imágenes y Actas - La Tinka")
 
-# 1. CARGA DE DATOS PRINCIPAL
 def cargar_datos():
     if not os.path.exists("datos.xlsx"):
         return pd.DataFrame()
@@ -30,7 +29,6 @@ def cargar_datos():
 
 df = cargar_datos()
 
-# Detectar columnas
 col_producto = next((c for c in df.columns if 'PRODUCTO' in c), None)
 col_fecha = next((c for c in df.columns if 'FECHA' in c), None)
 col_carpeta = next((c for c in df.columns if 'CARPET' in c), None)
@@ -39,12 +37,10 @@ col_ganador = next((c for c in df.columns if 'GANADOR' in c), None)
 if col_fecha:
     df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
 
-# 2. CARGA DE MAESTRO DE TERMINALES (Base relacional)
 def cargar_terminales():
     if os.path.exists("terminales.csv"):
         return pd.read_csv("terminales.csv", dtype=str).fillna("")
     else:
-        # Si no existe, lo crea extrayendo los datos únicos del Excel
         if 'TERMINAL' in df.columns and 'NOMBRE DE TERMINAL' in df.columns:
             term_df = df[['TERMINAL', 'NOMBRE DE TERMINAL', 'SUPERVISOR']].drop_duplicates(subset=['TERMINAL']).dropna(subset=['TERMINAL'])
             term_df = term_df[term_df['TERMINAL'] != ""]
@@ -56,7 +52,7 @@ def cargar_terminales():
 df_terminales = cargar_terminales()
 
 # ---------------------------------------------------------
-# BARRA LATERAL IZQUIERDA: BUSCADOR Y FORMULARIO
+# BARRA LATERAL IZQUIERDA
 # ---------------------------------------------------------
 st.sidebar.header("🔍 Buscador")
 if col_producto:
@@ -72,7 +68,6 @@ st.sidebar.header("📝 Nuevo Ganador")
 lista_term = sorted(df_terminales['TERMINAL'].unique().tolist())
 term_seleccionado = st.sidebar.selectbox("1. Código de Terminal:", [""] + lista_term)
 
-# Auto-completado inteligente
 nombre_auto = ""
 super_auto = ""
 if term_seleccionado != "":
@@ -81,7 +76,6 @@ if term_seleccionado != "":
     super_auto = datos_term.get('SUPERVISOR', '')
     st.sidebar.success(f"**Sede:** {nombre_auto}\n**Sup:** {super_auto}")
 
-# El formulario en sí
 with st.sidebar.form("form_nuevo"):
     nuevo_producto = st.text_input("Producto")
     nueva_fecha = st.date_input("Fecha de Carga")
@@ -106,7 +100,7 @@ with st.sidebar.form("form_nuevo"):
             if 'NOMBRE DE TERMINAL' in df.columns: nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
             if 'SUPERVISOR' in df.columns: nueva_fila['SUPERVISOR'] = super_auto
             if col_producto: nueva_fila[col_producto] = nuevo_producto
-            if col_fecha: nueva_fila[col_fecha] = nueva_fecha
+            if col_fecha: nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
             if col_ganador: nueva_fila[col_ganador] = nuevo_ganador
             if col_carpeta: nueva_fila[col_carpeta] = nueva_carpeta
             
@@ -120,17 +114,29 @@ with st.sidebar.form("form_nuevo"):
 tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "🏆 Ranking", "🏪 Maestro de Terminales"])
 
 with tab1:
-    st.dataframe(df_filtrado.astype(str), use_container_width=True)
+    # 1. ORDENAMOS LA TABLA POR FECHA MÁS RECIENTE
+    if col_fecha:
+        df_mostrar = df_filtrado.sort_values(by=col_fecha, ascending=False)
+    else:
+        df_mostrar = df_filtrado.iloc[::-1]
+        
+    st.dataframe(df_mostrar.astype(str), use_container_width=True)
     st.markdown("---")
     st.subheader("📥 Descargar Archivos")
     
     if col_carpeta and col_ganador:
-        for index, row in df_filtrado.iterrows():
+        for index, row in df_mostrar.iterrows():
             carpeta = str(row[col_carpeta]).strip()
             ganador = str(row[col_ganador]).strip()
             
+            # 2. LÓGICA PARA ETIQUETA "NUEVO" (Añadido en los últimos 3 días)
+            etiqueta = ""
+            if col_fecha and pd.notna(row[col_fecha]):
+                if (datetime.now() - row[col_fecha]).days <= 3:
+                    etiqueta = " 🆕 ¡NUEVA FOTO!"
+            
             if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
-                with st.expander(f"👤 {ganador} (Código: {carpeta})"):
+                with st.expander(f"👤 {ganador} (Código: {carpeta}){etiqueta}"):
                     archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg'))]
                     if len(archivos) > 0:
                         columnas = st.columns(len(archivos))
@@ -164,10 +170,7 @@ with tab2:
 
 with tab3:
     st.subheader("🏪 Gestor de Terminales")
-    st.write("Añade nuevos terminales o edita los existentes. Estos datos alimentarán automáticamente el formulario lateral.")
-    
-    # Editor de datos interactivo
     df_term_editado = st.data_editor(df_terminales, num_rows="dynamic", use_container_width=True)
-    
     if st.button("💾 Guardar Cambios en Terminales"):
-        df_term
+        df_term_editado.to_csv("terminales.csv", index=False)
+        st.success("¡Base de datos actualizada!")
