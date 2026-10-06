@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime
 
 st.set_page_config(page_title="Banco de Imágenes - La Tinka", layout="wide")
 st.title("🏆 Banco de Imágenes y Actas - La Tinka")
@@ -30,13 +30,16 @@ def cargar_datos():
 df = cargar_datos()
 
 col_producto = next((c for c in df.columns if 'PRODUCTO' in c), None)
-# Aseguramos que la fecha de carga no se confunda con la de publicación
 col_fecha = next((c for c in df.columns if 'FECHA DE CARGA' in c), next((c for c in df.columns if 'FECHA' in c and 'PUB' not in c), None))
 col_carpeta = next((c for c in df.columns if 'CARPET' in c), None)
 col_ganador = next((c for c in df.columns if 'GANADOR' in c), None)
 col_monto = next((c for c in df.columns if 'MONTO' in c), None)
-# Nueva detección para la fecha de publicación
-col_pub = next((c for c in df.columns if 'PUBLICACI' in c), None) 
+
+# Aseguramos que exista la columna de publicación
+col_pub = next((c for c in df.columns if 'PUBLICACI' in c), None)
+if not col_pub:
+    df['FECHA PUBLICACIÓN'] = ""
+    col_pub = 'FECHA PUBLICACIÓN'
 
 if col_fecha:
     df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
@@ -140,12 +143,13 @@ with tab1:
             
             # Lógica para Estado de Publicación
             str_pub = ""
-            if col_pub:
-                val_pub = str(row[col_pub]).strip().lower()
-                if val_pub in ["", "nan", "nat", "none"]:
-                    str_pub = " | 🔴 SIN PUBLICAR"
-                else:
-                    str_pub = " | 🟢 PUBLICADO"
+            val_pub = str(row[col_pub]).strip().lower()
+            esta_publicado = False
+            if val_pub in ["", "nan", "nat", "none"]:
+                str_pub = " | 🔴 SIN PUBLICAR"
+            else:
+                str_pub = f" | 🟢 PUBLICADO ({val_pub})"
+                esta_publicado = True
             
             etiqueta = ""
             if col_fecha and pd.notna(row[col_fecha]):
@@ -153,7 +157,6 @@ with tab1:
                     etiqueta = " 🆕 ¡NUEVA FOTO!"
             
             if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
-                # Se incorpora el estado de publicación al título
                 with st.expander(f"👤 {ganador}{str_prod}{str_monto}{str_pub} (Código: {carpeta}){etiqueta}"):
                     archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
                     
@@ -164,6 +167,29 @@ with tab1:
                                 columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}")
                     else:
                         st.info("Carpeta sin fotos válidas.")
+                    
+                    # --- NUEVO: GESTOR DE PUBLICACIÓN ---
+                    st.markdown("---")
+                    col_fechapub, col_btnpub = st.columns([2, 1])
+                    with col_fechapub:
+                        nueva_fecha_pub = st.date_input(
+                            "Seleccionar Fecha de Publicación", 
+                            key=f"date_pub_{carpeta}_{index}"
+                        )
+                    with col_btnpub:
+                        st.write("") # Espaciador para alinear el botón verticalmente
+                        st.write("") 
+                        if not esta_publicado:
+                            if st.button("✅ Marcar como Publicado", key=f"btn_upd_{carpeta}_{index}", use_container_width=True):
+                                # Actualizamos la fila exacta en el Excel
+                                df.at[index, col_pub] = pd.to_datetime(nueva_fecha_pub).strftime('%Y-%m-%d')
+                                df.to_excel("datos.xlsx", index=False)
+                                st.rerun() # Recarga la app instantáneamente
+                        else:
+                            if st.button("❌ Revertir a 'Sin Publicar'", key=f"btn_rev_{carpeta}_{index}", use_container_width=True):
+                                df.at[index, col_pub] = ""
+                                df.to_excel("datos.xlsx", index=False)
+                                st.rerun()
 
 with tab2:
     st.subheader("Top Terminales con más Ganadores")
