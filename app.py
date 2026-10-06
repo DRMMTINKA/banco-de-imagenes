@@ -8,8 +8,19 @@ st.title("🏆 Banco de Imágenes y Actas - La Tinka")
 @st.cache_data
 def cargar_datos():
     df = pd.read_excel("datos.xlsx")
-    # LÍNEA LIMPIADORA: Borra espacios en blanco ocultos en los títulos
-    df.columns = df.columns.str.strip()
+    
+    # BUSCADOR INTELIGENTE: Si hay filas vacías arriba, busca la fila real de los títulos
+    if 'PROMOTORA' not in df.columns:
+        for i, row in df.iterrows():
+            # Si encuentra la palabra PROMOTORA en esta fila, la convierte en los encabezados
+            if 'PROMOTORA' in list(row.astype(str)):
+                df.columns = row
+                # Recorta la tabla para que empiece a partir de los datos reales
+                df = df.iloc[i+1:].reset_index(drop=True)
+                break
+                
+    # Limpia cualquier espacio en blanco invisible
+    df.columns = df.columns.astype(str).str.strip()
     return df
 
 try:
@@ -20,7 +31,6 @@ except Exception as e:
 
 st.sidebar.header("🔍 Buscador")
 
-# Verificamos que la columna exista para evitar errores
 if 'PROMOTORA' in df.columns:
     promotoras = df['PROMOTORA'].dropna().unique().tolist()
     promotora_seleccionada = st.sidebar.multiselect("Buscar por Promotora:", promotoras)
@@ -30,7 +40,7 @@ if 'PROMOTORA' in df.columns:
     else:
         df_filtrado = df
 else:
-    st.error("No se encontró la columna 'PROMOTORA'. Las columnas detectadas son: " + ", ".join(df.columns))
+    st.error("No se encontró la columna 'PROMOTORA'. Revisa tu archivo Excel.")
     st.stop()
 
 st.subheader("📊 Base de Datos de Ganadores")
@@ -45,7 +55,6 @@ if 'NOMBRE CARPET' in df.columns and 'NOMBRE GANADOR' in df.columns:
         carpeta = str(row['NOMBRE CARPET']).strip()
         ganador = str(row['NOMBRE GANADOR'])
         
-        # Si la subcarpeta existe, mostramos el desplegable con los botones
         if os.path.exists(carpeta) and os.path.isdir(carpeta):
             with st.expander(f"👤 {ganador} (Código: {carpeta})"):
                 archivos = os.listdir(carpeta)
