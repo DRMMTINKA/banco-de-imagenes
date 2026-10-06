@@ -3,10 +3,35 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
+from github import Github
 
 st.set_page_config(page_title="Banco de Imágenes - La Tinka", layout="wide")
 st.title("🏆 Banco de Imágenes y Actas - La Tinka")
 
+# --- FUNCIÓN MAESTRA DE GUARDADO PERMANENTE ---
+def sincronizar_con_github(ruta_local, ruta_github, mensaje):
+    try:
+        # Usa la llave secreta que guardaste en Streamlit
+        g = Github(st.secrets["GITHUB_TOKEN"])
+        # Conecta directo con tu almacén
+        repo = g.get_repo("DRMMTINKA/banco-de-imagenes")
+        
+        with open(ruta_local, "rb") as f:
+            content = f.read()
+            
+        try:
+            # Si el archivo ya existe (ej. actualizar el Excel), lo sobreescribe
+            contents = repo.get_contents(ruta_github)
+            repo.update_file(contents.path, mensaje, content, contents.sha)
+        except:
+            # Si el archivo es nuevo (ej. nuevas fotos), lo crea
+            repo.create_file(ruta_github, mensaje, content)
+        return True
+    except Exception as e:
+        st.error(f"Hubo un problema de conexión con GitHub: {e}")
+        return False
+
+# --- CARGA DE DATOS ---
 def cargar_datos():
     if not os.path.exists("datos.xlsx"):
         return pd.DataFrame()
@@ -58,7 +83,7 @@ def cargar_terminales():
 df_terminales = cargar_terminales()
 
 # ---------------------------------------------------------
-# BARRA LATERAL IZQUIERDA
+# BARRA LATERAL IZQUIERDA Y FORMULARIO
 # ---------------------------------------------------------
 st.sidebar.header("🔍 Buscador")
 if col_producto:
@@ -91,31 +116,40 @@ with st.sidebar.form("form_nuevo"):
     
     fotos = st.file_uploader("Fotos (Ganador y Acta)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
     
-    enviado = st.form_submit_button("Guardar Registro", type="primary")
+    enviado = st.form_submit_button("Guardar Registro Permanentemente", type="primary")
     
     if enviado:
         if term_seleccionado == "" or nueva_carpeta.strip() == "":
             st.error("Falta seleccionar Terminal o ingresar Código de Carpeta.")
         else:
-            os.makedirs(nueva_carpeta, exist_ok=True)
-            for foto in fotos:
-                ruta_foto = os.path.join(nueva_carpeta, foto.name)
-                with open(ruta_foto, "wb") as f:
-                    f.write(foto.getbuffer())
-            
-            nueva_fila = {c: "" for c in df.columns} 
-            if 'TERMINAL' in df.columns: nueva_fila['TERMINAL'] = term_seleccionado
-            if 'NOMBRE DE TERMINAL' in df.columns: nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
-            if 'SUPERVISOR' in df.columns: nueva_fila['SUPERVISOR'] = super_auto
-            if col_producto: nueva_fila[col_producto] = nuevo_producto
-            if col_monto: nueva_fila[col_monto] = nuevo_monto
-            if col_fecha: nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
-            if col_ganador: nueva_fila[col_ganador] = nuevo_ganador
-            if col_carpeta: nueva_fila[col_carpeta] = nueva_carpeta
-            
-            df_final = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
-            df_final.to_excel("datos.xlsx", index=False)
-            st.success(f"✅ ¡{nuevo_ganador} guardado!")
+            with st.spinner("Sincronizando con GitHub... Por favor espera unos segundos."):
+                # 1. Guardar local temporalmente
+                os.makedirs(nueva_carpeta, exist_ok=True)
+                for foto in fotos:
+                    ruta_local_foto = os.path.join(nueva_carpeta, foto.name)
+                    with open(ruta_local_foto, "wb") as f:
+                        f.write(foto.getbuffer())
+                    # Enviar foto a GitHub
+                    sincronizar_con_github(ruta_local_foto, f"{nueva_carpeta}/{foto.name}", f"Subida foto {foto.name}")
+                
+                # 2. Actualizar Excel
+                nueva_fila = {c: "" for c in df.columns} 
+                if 'TERMINAL' in df.columns: nueva_fila['TERMINAL'] = term_seleccionado
+                if 'NOMBRE DE TERMINAL' in df.columns: nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
+                if 'SUPERVISOR' in df.columns: nueva_fila['SUPERVISOR'] = super_auto
+                if col_producto: nueva_fila[col_producto] = nuevo_producto
+                if col_monto: nueva_fila[col_monto] = nuevo_monto
+                if col_fecha: nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
+                if col_ganador: nueva_fila[col_ganador] = nuevo_ganador
+                if col_carpeta: nueva_fila[col_carpeta] = nueva_carpeta
+                
+                df_final = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
+                df_final.to_excel("datos.xlsx", index=False)
+                
+                # Enviar Excel a GitHub
+                sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
+                
+                st.success(f"✅ ¡{nuevo_ganador} guardado en la base de datos principal de forma permanente!")
 
 # ---------------------------------------------------------
 # ÁREA CENTRAL: PESTAÑAS
@@ -175,18 +209,22 @@ with tab1:
                         st.write("") 
                         if not esta_publicado:
                             if st.button("✅ Marcar como Publicado", key=f"btn_upd_{carpeta}_{index}", use_container_width=True):
-                                df.at[index, col_pub] = pd.to_datetime(nueva_fecha_pub).strftime('%Y-%m-%d')
-                                df.to_excel("datos.xlsx", index=False)
+                                with st.spinner("Actualizando en GitHub..."):
+                                    df.at[index, col_pub] = pd.to_datetime(nueva_fecha_pub).strftime('%Y-%m-%d')
+                                    df.to_excel("datos.xlsx", index=False)
+                                    sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Publicado: {ganador}")
                                 st.rerun()
                         else:
                             if st.button("❌ Revertir a 'Sin Publicar'", key=f"btn_rev_{carpeta}_{index}", use_container_width=True):
-                                df.at[index, col_pub] = ""
-                                df.to_excel("datos.xlsx", index=False)
+                                with st.spinner("Actualizando en GitHub..."):
+                                    df.at[index, col_pub] = ""
+                                    df.to_excel("datos.xlsx", index=False)
+                                    sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Revertido publicación: {ganador}")
                                 st.rerun()
 
 with tab2:
     st.subheader("📈 Panel de Estadísticas")
-    st.info("💡 Los gráficos responden automáticamente al filtro de 'PRODUCTO' y al rango de fechas.")
+    st.info("💡 Los gráficos responden automáticamente al filtro de 'PRODUCTO' de la barra lateral.")
     
     if col_fecha:
         fechas_validas = df[col_fecha].dropna()
@@ -201,13 +239,11 @@ with tab2:
             df_stats = df_filtrado
             
         if not df_stats.empty:
-            # 1. Gráfico Evolutivo de Fechas (Línea)
             st.markdown("### 📅 Evolución de Ganadores en el Tiempo")
             evolutivo = df_stats.groupby(df_stats[col_fecha].dt.date).size().reset_index(name='Cantidad de Fotos')
             evolutivo.columns = ['Fecha', 'Cantidad']
             
-            fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True, 
-                               labels={'Fecha': 'Día', 'Cantidad': 'Nº de Ganadores Registrados'})
+            fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True, labels={'Fecha': 'Día', 'Cantidad': 'Nº de Ganadores Registrados'})
             fig_line.update_layout(yaxis_title="Cantidad", margin=dict(t=10, b=10, l=10, r=10))
             st.plotly_chart(fig_line, use_container_width=True)
             
@@ -215,7 +251,6 @@ with tab2:
             
             col_g1, col_g2 = st.columns(2)
             
-            # 2. Material Publicado vs Sin Publicar
             with col_g1:
                 st.markdown("### 📢 Material Publicado")
                 estados = ["Sin Publicar" if str(v).strip().lower() in ["", "nan", "nat", "none"] else "Publicado" for v in df_stats[col_pub]]
@@ -223,13 +258,11 @@ with tab2:
                 conteo_estados = df_estados['Estado'].value_counts().reset_index()
                 conteo_estados.columns = ['Estado', 'Cantidad']
                 
-                fig_pub = px.pie(conteo_estados, values='Cantidad', names='Estado', hole=0.4, 
-                                 color='Estado', color_discrete_map={"Publicado": "#2ecc71", "Sin Publicar": "#e74c3c"})
+                fig_pub = px.pie(conteo_estados, values='Cantidad', names='Estado', hole=0.4, color='Estado', color_discrete_map={"Publicado": "#2ecc71", "Sin Publicar": "#e74c3c"})
                 fig_pub.update_traces(textposition='inside', textinfo='percent+label')
                 fig_pub.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
                 st.plotly_chart(fig_pub, use_container_width=True)
                 
-            # 3. Ranking de Terminales
             with col_g2:
                 st.markdown("### 🏆 Top Terminales (Ranking)")
                 if 'NOMBRE DE TERMINAL' in df.columns:
@@ -241,12 +274,12 @@ with tab2:
                     st.plotly_chart(fig_bar, use_container_width=True)
         else:
             st.warning("No hay ganadores registrados en este rango de fechas con este producto.")
-    else:
-        st.error("No se detectó una columna de FECHA válida para generar estadísticas.")
 
 with tab3:
     st.subheader("🏪 Gestor de Terminales")
     df_term_editado = st.data_editor(df_terminales, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Guardar Cambios en Terminales"):
-        df_term_editado.to_csv("terminales.csv", index=False)
-        st.success("¡Base de datos actualizada!")
+    if st.button("💾 Guardar Cambios en Terminales Permanentemente"):
+        with st.spinner("Actualizando catálogo de terminales en GitHub..."):
+            df_term_editado.to_csv("terminales.csv", index=False)
+            sincronizar_con_github("terminales.csv", "terminales.csv", "Catálogo de terminales actualizado")
+        st.success("¡Base de datos actualizada permanentemente!")
