@@ -81,7 +81,9 @@ with st.sidebar.form("form_nuevo"):
     nueva_fecha = st.date_input("Fecha de Carga")
     nuevo_ganador = st.text_input("Nombre del Ganador")
     nueva_carpeta = st.text_input("Código de Carpeta (Ej: 20261006-01)")
-    fotos = st.file_uploader("Fotos (Ganador y Acta)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
+    
+    # AÑADIDO: Permiso para subir archivos .webp
+    fotos = st.file_uploader("Fotos (Ganador y Acta)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
     
     enviado = st.form_submit_button("Guardar Registro", type="primary")
     
@@ -114,7 +116,6 @@ with st.sidebar.form("form_nuevo"):
 tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "🏆 Ranking", "🏪 Maestro de Terminales"])
 
 with tab1:
-    # 1. ORDENAMOS LA TABLA POR FECHA MÁS RECIENTE
     if col_fecha:
         df_mostrar = df_filtrado.sort_values(by=col_fecha, ascending=False)
     else:
@@ -129,7 +130,6 @@ with tab1:
             carpeta = str(row[col_carpeta]).strip()
             ganador = str(row[col_ganador]).strip()
             
-            # 2. LÓGICA PARA ETIQUETA "NUEVO" (Añadido en los últimos 3 días)
             etiqueta = ""
             if col_fecha and pd.notna(row[col_fecha]):
                 if (datetime.now() - row[col_fecha]).days <= 3:
@@ -137,12 +137,16 @@ with tab1:
             
             if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
                 with st.expander(f"👤 {ganador} (Código: {carpeta}){etiqueta}"):
-                    archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg'))]
+                    
+                    # AÑADIDO: Ahora también lee los archivos .webp de las carpetas
+                    archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                    
                     if len(archivos) > 0:
                         columnas = st.columns(len(archivos))
                         for i, archivo in enumerate(archivos):
                             with open(os.path.join(carpeta, archivo), "rb") as f:
-                                columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, mime="image/jpeg", key=f"btn_{carpeta}_{archivo}_{index}")
+                                # Se removió el 'mime' forzado para que descargue cualquier formato bien
+                                columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}")
                     else:
                         st.info("Carpeta sin fotos válidas.")
 
