@@ -35,7 +35,6 @@ col_carpeta = next((c for c in df.columns if 'CARPET' in c), None)
 col_ganador = next((c for c in df.columns if 'GANADOR' in c), None)
 col_monto = next((c for c in df.columns if 'MONTO' in c), None)
 
-# Aseguramos que exista la columna de publicación
 col_pub = next((c for c in df.columns if 'PUBLICACI' in c), None)
 if not col_pub:
     df['FECHA PUBLICACIÓN'] = ""
@@ -121,7 +120,7 @@ with st.sidebar.form("form_nuevo"):
 # ---------------------------------------------------------
 # ÁREA CENTRAL: PESTAÑAS
 # ---------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "🏆 Ranking", "🏪 Maestro de Terminales"])
+tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales"])
 
 with tab1:
     if col_fecha:
@@ -141,7 +140,6 @@ with tab1:
             str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
             str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
             
-            # Lógica para Estado de Publicación
             str_pub = ""
             val_pub = str(row[col_pub]).strip().lower()
             esta_publicado = False
@@ -168,23 +166,18 @@ with tab1:
                     else:
                         st.info("Carpeta sin fotos válidas.")
                     
-                    # --- NUEVO: GESTOR DE PUBLICACIÓN ---
                     st.markdown("---")
                     col_fechapub, col_btnpub = st.columns([2, 1])
                     with col_fechapub:
-                        nueva_fecha_pub = st.date_input(
-                            "Seleccionar Fecha de Publicación", 
-                            key=f"date_pub_{carpeta}_{index}"
-                        )
+                        nueva_fecha_pub = st.date_input("Seleccionar Fecha de Publicación", key=f"date_pub_{carpeta}_{index}")
                     with col_btnpub:
-                        st.write("") # Espaciador para alinear el botón verticalmente
+                        st.write("") 
                         st.write("") 
                         if not esta_publicado:
                             if st.button("✅ Marcar como Publicado", key=f"btn_upd_{carpeta}_{index}", use_container_width=True):
-                                # Actualizamos la fila exacta en el Excel
                                 df.at[index, col_pub] = pd.to_datetime(nueva_fecha_pub).strftime('%Y-%m-%d')
                                 df.to_excel("datos.xlsx", index=False)
-                                st.rerun() # Recarga la app instantáneamente
+                                st.rerun()
                         else:
                             if st.button("❌ Revertir a 'Sin Publicar'", key=f"btn_rev_{carpeta}_{index}", use_container_width=True):
                                 df.at[index, col_pub] = ""
@@ -192,39 +185,64 @@ with tab1:
                                 st.rerun()
 
 with tab2:
-    st.subheader("Top Terminales con más Ganadores")
-    st.info("💡 El gráfico responde automáticamente al filtro de 'PRODUCTO' de la barra lateral izquierda.")
+    st.subheader("📈 Panel de Estadísticas")
+    st.info("💡 Los gráficos responden automáticamente al filtro de 'PRODUCTO' y al rango de fechas.")
     
-    if 'NOMBRE DE TERMINAL' in df.columns and col_fecha:
+    if col_fecha:
         fechas_validas = df[col_fecha].dropna()
         if not fechas_validas.empty:
-            rango_fechas = st.date_input("Rango de fechas:", [fechas_validas.min().date(), fechas_validas.max().date()])
+            rango_fechas = st.date_input("Rango de fechas para estadísticas:", [fechas_validas.min().date(), fechas_validas.max().date()])
             if len(rango_fechas) == 2:
                 mask = (df_filtrado[col_fecha].dt.date >= rango_fechas[0]) & (df_filtrado[col_fecha].dt.date <= rango_fechas[1])
-                df_ranking = df_filtrado.loc[mask]
+                df_stats = df_filtrado.loc[mask]
             else:
-                df_ranking = df_filtrado
+                df_stats = df_filtrado
+        else:
+            df_stats = df_filtrado
             
-            ranking = df_ranking['NOMBRE DE TERMINAL'].value_counts().reset_index()
-            ranking.columns = ['Terminal', 'Ganadores']
+        if not df_stats.empty:
+            # 1. Gráfico Evolutivo de Fechas (Línea)
+            st.markdown("### 📅 Evolución de Ganadores en el Tiempo")
+            evolutivo = df_stats.groupby(df_stats[col_fecha].dt.date).size().reset_index(name='Cantidad de Fotos')
+            evolutivo.columns = ['Fecha', 'Cantidad']
             
-            if not ranking.empty:
-                tipo_grafico = st.radio("Selecciona el tipo de gráfico:", ["📊 Barras", "🥧 Torta"], horizontal=True)
-                col_grafico, col_tabla = st.columns([2, 1])
+            fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True, 
+                               labels={'Fecha': 'Día', 'Cantidad': 'Nº de Ganadores Registrados'})
+            fig_line.update_layout(yaxis_title="Cantidad", margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_line, use_container_width=True)
+            
+            st.markdown("---")
+            
+            col_g1, col_g2 = st.columns(2)
+            
+            # 2. Material Publicado vs Sin Publicar
+            with col_g1:
+                st.markdown("### 📢 Material Publicado")
+                estados = ["Sin Publicar" if str(v).strip().lower() in ["", "nan", "nat", "none"] else "Publicado" for v in df_stats[col_pub]]
+                df_estados = pd.DataFrame({'Estado': estados})
+                conteo_estados = df_estados['Estado'].value_counts().reset_index()
+                conteo_estados.columns = ['Estado', 'Cantidad']
                 
-                with col_grafico: 
-                    if tipo_grafico == "📊 Barras":
-                        st.bar_chart(data=ranking.head(10), x='Terminal', y='Ganadores')
-                    else:
-                        fig = px.pie(ranking.head(10), values='Ganadores', names='Terminal', hole=0.3)
-                        fig.update_traces(textposition='inside', textinfo='percent+label')
-                        fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                with col_tabla: 
-                    st.dataframe(ranking, use_container_width=True)
-            else:
-                st.warning("No hay ganadores registrados con este producto en este rango de fechas.")
+                fig_pub = px.pie(conteo_estados, values='Cantidad', names='Estado', hole=0.4, 
+                                 color='Estado', color_discrete_map={"Publicado": "#2ecc71", "Sin Publicar": "#e74c3c"})
+                fig_pub.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pub.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+                st.plotly_chart(fig_pub, use_container_width=True)
+                
+            # 3. Ranking de Terminales
+            with col_g2:
+                st.markdown("### 🏆 Top Terminales (Ranking)")
+                if 'NOMBRE DE TERMINAL' in df.columns:
+                    ranking = df_stats['NOMBRE DE TERMINAL'].value_counts().reset_index()
+                    ranking.columns = ['Terminal', 'Ganadores']
+                    
+                    fig_bar = px.bar(ranking.head(10), x='Terminal', y='Ganadores', text_auto=True)
+                    fig_bar.update_layout(xaxis_title="", yaxis_title="Ganadores", margin=dict(t=10, b=10, l=10, r=10))
+                    st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.warning("No hay ganadores registrados en este rango de fechas con este producto.")
+    else:
+        st.error("No se detectó una columna de FECHA válida para generar estadísticas.")
 
 with tab3:
     st.subheader("🏪 Gestor de Terminales")
