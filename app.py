@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import plotly.express as px
 from datetime import datetime, timedelta
 
 # Configuración inicial
@@ -58,6 +59,7 @@ st.sidebar.header("🔍 Buscador")
 if col_producto:
     productos = sorted([p for p in df[col_producto].unique() if str(p).strip() != ""])
     prod_seleccionado = st.sidebar.multiselect("Filtrar por PRODUCTO:", productos)
+    # df_filtrado controla TODO lo que se muestra (Base de datos y Ranking)
     df_filtrado = df[df[col_producto].isin(prod_seleccionado)] if prod_seleccionado else df
 else:
     df_filtrado = df
@@ -82,7 +84,6 @@ with st.sidebar.form("form_nuevo"):
     nuevo_ganador = st.text_input("Nombre del Ganador")
     nueva_carpeta = st.text_input("Código de Carpeta (Ej: 20261006-01)")
     
-    # AÑADIDO: Permiso para subir archivos .webp
     fotos = st.file_uploader("Fotos (Ganador y Acta)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
     
     enviado = st.form_submit_button("Guardar Registro", type="primary")
@@ -137,40 +138,54 @@ with tab1:
             
             if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
                 with st.expander(f"👤 {ganador} (Código: {carpeta}){etiqueta}"):
-                    
-                    # AÑADIDO: Ahora también lee los archivos .webp de las carpetas
                     archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
                     
                     if len(archivos) > 0:
                         columnas = st.columns(len(archivos))
                         for i, archivo in enumerate(archivos):
                             with open(os.path.join(carpeta, archivo), "rb") as f:
-                                # Se removió el 'mime' forzado para que descargue cualquier formato bien
                                 columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}")
                     else:
                         st.info("Carpeta sin fotos válidas.")
 
 with tab2:
     st.subheader("Top Terminales con más Ganadores")
+    st.info("💡 El gráfico responde automáticamente al filtro de 'PRODUCTO' de la barra lateral izquierda.")
+    
     if 'NOMBRE DE TERMINAL' in df.columns and col_fecha:
+        # Usamos df_filtrado en lugar de df para que el gráfico respete el buscador lateral
         fechas_validas = df[col_fecha].dropna()
         if not fechas_validas.empty:
             rango_fechas = st.date_input("Rango de fechas:", [fechas_validas.min().date(), fechas_validas.max().date()])
             if len(rango_fechas) == 2:
-                mask = (df[col_fecha].dt.date >= rango_fechas[0]) & (df[col_fecha].dt.date <= rango_fechas[1])
-                df_ranking = df.loc[mask]
+                mask = (df_filtrado[col_fecha].dt.date >= rango_fechas[0]) & (df_filtrado[col_fecha].dt.date <= rango_fechas[1])
+                df_ranking = df_filtrado.loc[mask]
             else:
-                df_ranking = df
+                df_ranking = df_filtrado
             
             ranking = df_ranking['NOMBRE DE TERMINAL'].value_counts().reset_index()
             ranking.columns = ['Terminal', 'Ganadores']
             
             if not ranking.empty:
+                # Botones para cambiar entre Barras y Torta
+                tipo_grafico = st.radio("Selecciona el tipo de gráfico:", ["📊 Barras", "🥧 Torta"], horizontal=True)
+                
                 col_grafico, col_tabla = st.columns([2, 1])
-                with col_grafico: st.bar_chart(data=ranking.head(10), x='Terminal', y='Ganadores')
-                with col_tabla: st.dataframe(ranking, use_container_width=True)
+                
+                with col_grafico: 
+                    if tipo_grafico == "📊 Barras":
+                        st.bar_chart(data=ranking.head(10), x='Terminal', y='Ganadores')
+                    else:
+                        # Gráfico de torta interactivo con Plotly
+                        fig = px.pie(ranking.head(10), values='Ganadores', names='Terminal', hole=0.3)
+                        fig.update_traces(textposition='inside', textinfo='percent+label')
+                        fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                with col_tabla: 
+                    st.dataframe(ranking, use_container_width=True)
             else:
-                st.info("No hay datos en esta fecha.")
+                st.warning("No hay ganadores registrados con este producto en este rango de fechas.")
 
 with tab3:
     st.subheader("🏪 Gestor de Terminales")
