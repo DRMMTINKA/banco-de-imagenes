@@ -273,7 +273,6 @@ with tab1:
 with tab2:
     st.subheader("📈 Panel de Estadísticas")
     
-    # Paleta de colores oficial La Tinka aplicada a los gráficos
     color_naranja = "#FF5F00"
     color_verde = "#006820"
     color_verde_limon = "#B5E53E"
@@ -308,7 +307,7 @@ with tab2:
         evolutivo = df_ev.groupby(df_ev[col_fecha].dt.date).size().reset_index(name='Cantidad de Fotos')
         evolutivo.columns = ['Fecha', 'Cantidad']
         fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True)
-        fig_line.update_traces(line_color=color_naranja, marker=dict(color=color_naranja)) # Aplicando Naranja Oficial
+        fig_line.update_traces(line_color=color_naranja, marker=dict(color=color_naranja))
         st.plotly_chart(fig_line, use_container_width=True)
 
     st.markdown("---")
@@ -318,7 +317,7 @@ with tab2:
         ranking_p = df_prom[col_promotora].value_counts().reset_index()
         ranking_p.columns = ['Promotora', 'Apariciones']
         fig_p = px.bar(ranking_p.head(10), x='Promotora', y='Apariciones', text_auto=True)
-        fig_p.update_traces(marker_color=color_verde) # Aplicando Verde Oficial
+        fig_p.update_traces(marker_color=color_verde)
         st.plotly_chart(fig_p, use_container_width=True)
 
     st.markdown("---")
@@ -328,21 +327,57 @@ with tab2:
         ranking_t = df_term['NOMBRE DE TERMINAL'].value_counts().reset_index()
         ranking_t.columns = ['Terminal', 'Ganadores']
         fig_bar = px.bar(ranking_t.head(10), x='Terminal', y='Ganadores', text_auto=True)
-        fig_bar.update_traces(marker_color=color_amarillo) # Aplicando Amarillo Oficial
+        fig_bar.update_traces(marker_color=color_amarillo)
         st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("---")
     st.markdown("### 📢 Material Publicado")
-    df_pub = aplicar_filtros_locales(df, "pub")
+    # Lógica inteligente especial para el gráfico de Material Publicado
+    df_pub = df.copy()
+    col_f1, col_f2, col_f3 = st.columns([1.5, 1.5, 1])
+    
+    df_pub['fecha_pub_dt'] = pd.to_datetime(df_pub[col_pub], errors='coerce')
+    
+    with col_f3:
+        st.write("")
+        tipo_filtro = st.radio("Filtrar fechas por:", ["Fecha de Carga", "Fecha de Publicación"], key="radio_pub")
+        
+    with col_f1:
+        if tipo_filtro == "Fecha de Carga" and col_fecha in df_pub.columns:
+            fechas_validas = df_pub[col_fecha].dropna()
+        else:
+            fechas_validas = df_pub['fecha_pub_dt'].dropna()
+            
+        if not fechas_validas.empty:
+            min_d = fechas_validas.min().date()
+            max_d = fechas_validas.max().date()
+            rango = st.date_input("Rango de fechas", [min_d, max_d], key="date_pub")
+            if len(rango) == 2:
+                if tipo_filtro == "Fecha de Carga":
+                    mask = (df_pub[col_fecha].dt.date >= rango[0]) & (df_pub[col_fecha].dt.date <= rango[1])
+                    df_pub = df_pub.loc[mask]
+                else:
+                    mask_pub = (df_pub['fecha_pub_dt'].dt.date >= rango[0]) & (df_pub['fecha_pub_dt'].dt.date <= rango[1])
+                    mask_unpub = df_pub['fecha_pub_dt'].isna()
+                    df_pub = df_pub.loc[mask_pub | mask_unpub]
+                    
+    with col_f2:
+        if col_producto in df_pub.columns:
+            prods = sorted([str(p) for p in df_pub[col_producto].unique() if str(p).strip() != ""])
+            sel_prods = st.multiselect("Producto", prods, default=prods, key="prod_pub")
+            if sel_prods:
+                df_pub = df_pub[df_pub[col_producto].isin(sel_prods)]
+
     if not df_pub.empty and col_pub:
         estados = ["Sin Publicar" if str(v).strip().lower() in ["", "nan", "nat", "none"] else "Publicado" for v in df_pub[col_pub]]
         df_estados = pd.DataFrame({'Estado': estados})
         conteo = df_estados['Estado'].value_counts().reset_index()
         conteo.columns = ['Estado', 'Cantidad']
-        # Aplicando Verde Limón y Rojo Oficiales
         fig_pub = px.pie(conteo, values='Cantidad', names='Estado', hole=0.4, color='Estado', 
                          color_discrete_map={"Publicado": color_verde_limon, "Sin Publicar": color_rojo})
         st.plotly_chart(fig_pub, use_container_width=True)
+    else:
+        st.warning("No hay datos para mostrar con estos filtros.")
 
 with tab3:
     st.subheader("🏪 Gestor de Terminales")
