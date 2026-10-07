@@ -13,11 +13,8 @@ st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 # =========================================================
 def aplicar_fuente_corporativa():
     try:
-        # Cargar fuente Regular
         with open("Duplet-Regular.woff2", "rb") as f:
             fuente_regular = base64.b64encode(f.read()).decode("utf-8")
-            
-        # Cargar fuente Bold
         with open("Duplet-Bold.woff2", "rb") as f:
             fuente_bold = base64.b64encode(f.read()).decode("utf-8")
         
@@ -35,14 +32,22 @@ def aplicar_fuente_corporativa():
             font-weight: bold;
             font-style: normal;
         }}
-        html, body, [class*="css"], [class*="st-"] {{
+        /* Aplicar la fuente corporativa a textos */
+        html, body, .stApp, p, h1, h2, h3, h4, h5, h6, div, span, label, button {{
             font-family: 'Duplet', sans-serif !important;
+        }}
+        /* Proteger los íconos nativos de Streamlit */
+        .material-symbols-rounded, 
+        [data-testid="stIconMaterial"], 
+        i.material-icons,
+        span.material-symbols-rounded {{
+            font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
         }}
         </style>
         """
         st.markdown(css_fuente, unsafe_allow_html=True)
     except Exception as e:
-        pass # Si aún no subes los archivos, usa la fuente por defecto
+        pass
 
 aplicar_fuente_corporativa()
 
