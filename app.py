@@ -6,9 +6,54 @@ from datetime import datetime
 from github import Github
 
 st.set_page_config(page_title="Banco de Imágenes - La Tinka", layout="wide")
-st.title("🏆 Banco de Imágenes y Actas - La Tinka")
 
-# --- FUNCIÓN MAESTRA DE GUARDADO PERMANENTE ---
+# =========================================================
+# SISTEMA DE LOGIN Y SEGURIDAD
+# =========================================================
+def verificar_contrasena():
+    if "acceso_concedido" not in st.session_state:
+        st.session_state["acceso_concedido"] = False
+
+    if not st.session_state["acceso_concedido"]:
+        st.title("🔒 Acceso Restringido")
+        st.write("Por favor, ingresa tus credenciales para acceder al Banco de Imágenes.")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            with st.form("login_form"):
+                usuario = st.text_input("Usuario")
+                contrasena = st.text_input("Contraseña", type="password")
+                submit = st.form_submit_button("Ingresar", use_container_width=True)
+                
+                if submit:
+                    try:
+                        if usuario in st.secrets["usuarios"] and st.secrets["usuarios"][usuario] == contrasena:
+                            st.session_state["acceso_concedido"] = True
+                            st.session_state["usuario_actual"] = usuario
+                            st.rerun()
+                        else:
+                            st.error("❌ Usuario o contraseña incorrectos.")
+                    except Exception as e:
+                        st.error("Error del sistema: No se han configurado los usuarios en Streamlit Secrets.")
+        return False
+    return True
+
+if not verificar_contrasena():
+    st.stop()
+
+col_titulo, col_logout = st.columns([4, 1])
+with col_titulo:
+    st.title("🏆 Banco de Imágenes y Actas - La Tinka")
+with col_logout:
+    st.write("")
+    if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        st.session_state["acceso_concedido"] = False
+        st.rerun()
+
+# =========================================================
+# CÓDIGO PRINCIPAL DE LA PLATAFORMA
+# =========================================================
+
 def sincronizar_con_github(ruta_local, ruta_github, mensaje):
     try:
         g = Github(st.secrets["GITHUB_TOKEN"])
@@ -27,7 +72,6 @@ def sincronizar_con_github(ruta_local, ruta_github, mensaje):
         st.error(f"Hubo un problema de conexión con GitHub: {e}")
         return False
 
-# --- CARGA DE DATOS ---
 def cargar_datos():
     if not os.path.exists("datos.xlsx"):
         return pd.DataFrame()
@@ -50,7 +94,6 @@ def cargar_datos():
 
 df = cargar_datos()
 
-# Detección de columnas
 col_producto = next((c for c in df.columns if 'PRODUCTO' in c), 'PRODUCTO')
 col_promotora = next((c for c in df.columns if 'PROMOTORA' in c), 'PROMOTORA')
 col_req = next((c for c in df.columns if 'CUMPLE' in c or 'REQUISIT' in c), '¿CUMPLE REQUISITOS?')
@@ -81,9 +124,8 @@ def cargar_terminales():
 
 df_terminales = cargar_terminales()
 
-# ---------------------------------------------------------
-# BARRA LATERAL IZQUIERDA Y FORMULARIO
-# ---------------------------------------------------------
+# --- BARRA LATERAL ---
+st.sidebar.markdown(f"👤 **Usuario Activo:** `{st.session_state['usuario_actual']}`")
 st.sidebar.header("🔍 Buscador")
 if col_producto in df.columns:
     productos = sorted([p for p in df[col_producto].unique() if str(p).strip() != ""])
@@ -107,24 +149,52 @@ if term_seleccionado != "":
     st.sidebar.success(f"**Sede:** {nombre_auto}\n**Sup:** {super_auto}")
 
 with st.sidebar.form("form_nuevo"):
-    # NUEVOS CAMPOS Y DESPLEGABLES
     nuevo_producto = st.selectbox("Producto", ["TINKA", "KÁBALA", "RAPITINKA", "GANA DIARIO"])
     nueva_promotora = st.text_input("Nombre de la Promotora")
     nuevo_monto = st.text_input("Monto (Ej: 100)")
     nuevo_requisitos = st.selectbox("¿Cumple Requisitos?", ["SÍ", "NO"])
     nueva_fecha = st.date_input("Fecha de Carga")
     nuevo_ganador = st.text_input("Nombre del Ganador")
-    nueva_carpeta = st.text_input("Código de Carpeta (Ej: 20261006-01)")
+    
+    # Aviso de generación automática
+    st.info("📁 El Código de Carpeta se generará automáticamente según la fecha seleccionada.")
     
     fotos = st.file_uploader("Fotos (Ganador y Acta)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'webp'])
     
     enviado = st.form_submit_button("Guardar Registro Permanentemente", type="primary")
     
     if enviado:
-        if term_seleccionado == "" or nueva_carpeta.strip() == "":
-            st.error("Falta seleccionar Terminal o ingresar Código de Carpeta.")
+        if term_seleccionado == "":
+            st.error("Falta seleccionar Terminal.")
+        elif not fotos:
+            st.error("Debes subir al menos una foto.")
         else:
-            with st.spinner("Sincronizando con GitHub... Por favor espera unos segundos."):
+            with st.spinner("Generando código y sincronizando con GitHub..."):
+                
+                # --- LÓGICA DE GENERACIÓN AUTOMÁTICA DEL CÓDIGO ---
+                fecha_str = nueva_fecha.strftime("%Y%m%d") # Ej: 20261006
+                
+                # Buscar carpetas que empiecen con esta fecha
+                if col_carpeta in df.columns:
+                    carpetas_existentes = df[col_carpeta].dropna().astype(str)
+                    carpetas_hoy = carpetas_existentes[carpetas_existentes.str.startswith(fecha_str)]
+                else:
+                    carpetas_hoy = []
+                
+                max_corr = 0
+                for c in carpetas_hoy:
+                    try:
+                        # Extraer el número después del guion
+                        corr = int(c.split('-')[-1])
+                        if corr > max_corr:
+                            max_corr = corr
+                    except:
+                        pass
+                        
+                nuevo_corr = max_corr + 1
+                nueva_carpeta = f"{fecha_str}-{nuevo_corr:02d}" # Ej: 20261006-01
+                # --------------------------------------------------
+
                 os.makedirs(nueva_carpeta, exist_ok=True)
                 for foto in fotos:
                     ruta_local_foto = os.path.join(nueva_carpeta, foto.name)
@@ -132,7 +202,6 @@ with st.sidebar.form("form_nuevo"):
                         f.write(foto.getbuffer())
                     sincronizar_con_github(ruta_local_foto, f"{nueva_carpeta}/{foto.name}", f"Subida foto {foto.name}")
                 
-                # Actualización inteligente de columnas en Excel
                 nueva_fila = {c: "" for c in df.columns} 
                 nueva_fila['TERMINAL'] = term_seleccionado
                 nueva_fila['NOMBRE DE TERMINAL'] = nombre_auto
@@ -143,18 +212,16 @@ with st.sidebar.form("form_nuevo"):
                 nueva_fila[col_req] = nuevo_requisitos
                 nueva_fila[col_fecha] = pd.to_datetime(nueva_fecha)
                 nueva_fila[col_ganador] = nuevo_ganador
-                nueva_fila[col_carpeta] = nueva_carpeta
+                nueva_fila[col_carpeta] = nueva_carpeta # Asigna el código generado automáticamente
                 
                 df_final = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
                 df_final.to_excel("datos.xlsx", index=False)
                 
-                sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
+                sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador} ({nueva_carpeta})")
                 
-                st.success(f"✅ ¡{nuevo_ganador} guardado en la base de datos principal de forma permanente!")
+                st.success(f"✅ ¡{nuevo_ganador} guardado con éxito! Se creó la carpeta: {nueva_carpeta}")
 
-# ---------------------------------------------------------
-# ÁREA CENTRAL: PESTAÑAS
-# ---------------------------------------------------------
+# --- ÁREA CENTRAL ---
 tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales"])
 
 with tab1:
@@ -225,8 +292,6 @@ with tab1:
 
 with tab2:
     st.subheader("📈 Panel de Estadísticas")
-    st.info("💡 Los gráficos responden automáticamente al filtro de 'PRODUCTO' de la barra lateral.")
-    
     if col_fecha in df.columns:
         fechas_validas = df[col_fecha].dropna()
         if not fechas_validas.empty:
@@ -240,18 +305,14 @@ with tab2:
             df_stats = df_filtrado
             
         if not df_stats.empty:
-            st.markdown("### 📅 Evolución de Ganadores en el Tiempo")
+            st.markdown("### 📅 Evolución de Ganadores")
             evolutivo = df_stats.groupby(df_stats[col_fecha].dt.date).size().reset_index(name='Cantidad de Fotos')
             evolutivo.columns = ['Fecha', 'Cantidad']
             
-            fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True, labels={'Fecha': 'Día', 'Cantidad': 'Nº de Ganadores Registrados'})
-            fig_line.update_layout(yaxis_title="Cantidad", margin=dict(t=10, b=10, l=10, r=10))
+            fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True, labels={'Fecha': 'Día', 'Cantidad': 'Nº de Ganadores'})
             st.plotly_chart(fig_line, use_container_width=True)
             
-            st.markdown("---")
-            
             col_g1, col_g2 = st.columns(2)
-            
             with col_g1:
                 st.markdown("### 📢 Material Publicado")
                 estados = ["Sin Publicar" if str(v).strip().lower() in ["", "nan", "nat", "none"] else "Publicado" for v in df_stats[col_pub]]
@@ -260,27 +321,22 @@ with tab2:
                 conteo_estados.columns = ['Estado', 'Cantidad']
                 
                 fig_pub = px.pie(conteo_estados, values='Cantidad', names='Estado', hole=0.4, color='Estado', color_discrete_map={"Publicado": "#2ecc71", "Sin Publicar": "#e74c3c"})
-                fig_pub.update_traces(textposition='inside', textinfo='percent+label')
-                fig_pub.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
                 st.plotly_chart(fig_pub, use_container_width=True)
                 
             with col_g2:
-                st.markdown("### 🏆 Top Terminales (Ranking)")
+                st.markdown("### 🏆 Top Terminales")
                 if 'NOMBRE DE TERMINAL' in df.columns:
                     ranking = df_stats['NOMBRE DE TERMINAL'].value_counts().reset_index()
                     ranking.columns = ['Terminal', 'Ganadores']
                     
                     fig_bar = px.bar(ranking.head(10), x='Terminal', y='Ganadores', text_auto=True)
-                    fig_bar.update_layout(xaxis_title="", yaxis_title="Ganadores", margin=dict(t=10, b=10, l=10, r=10))
                     st.plotly_chart(fig_bar, use_container_width=True)
-        else:
-            st.warning("No hay ganadores registrados en este rango de fechas con este producto.")
 
 with tab3:
     st.subheader("🏪 Gestor de Terminales")
     df_term_editado = st.data_editor(df_terminales, num_rows="dynamic", use_container_width=True)
     if st.button("💾 Guardar Cambios en Terminales Permanentemente"):
-        with st.spinner("Actualizando catálogo de terminales en GitHub..."):
+        with st.spinner("Actualizando catálogo en GitHub..."):
             df_term_editado.to_csv("terminales.csv", index=False)
-            sincronizar_con_github("terminales.csv", "terminales.csv", "Catálogo de terminales actualizado")
-        st.success("¡Base de datos actualizada permanentemente!")
+            sincronizar_con_github("terminales.csv", "terminales.csv", "Catálogo actualizado")
+        st.success("¡Base de datos actualizada!")
