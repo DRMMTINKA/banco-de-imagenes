@@ -4,8 +4,47 @@ import os
 import plotly.express as px
 from datetime import datetime
 from github import Github
+import base64
 
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
+
+# =========================================================
+# INYECCIÓN DE FUENTE CORPORATIVA DUPLET (.woff2)
+# =========================================================
+def aplicar_fuente_corporativa():
+    try:
+        # Cargar fuente Regular
+        with open("Duplet-Regular.woff2", "rb") as f:
+            fuente_regular = base64.b64encode(f.read()).decode("utf-8")
+            
+        # Cargar fuente Bold
+        with open("Duplet-Bold.woff2", "rb") as f:
+            fuente_bold = base64.b64encode(f.read()).decode("utf-8")
+        
+        css_fuente = f"""
+        <style>
+        @font-face {{
+            font-family: 'Duplet';
+            src: url(data:font/woff2;charset=utf-8;base64,{fuente_regular}) format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }}
+        @font-face {{
+            font-family: 'Duplet';
+            src: url(data:font/woff2;charset=utf-8;base64,{fuente_bold}) format('woff2');
+            font-weight: bold;
+            font-style: normal;
+        }}
+        html, body, [class*="css"], [class*="st-"] {{
+            font-family: 'Duplet', sans-serif !important;
+        }}
+        </style>
+        """
+        st.markdown(css_fuente, unsafe_allow_html=True)
+    except Exception as e:
+        pass # Si aún no subes los archivos, usa la fuente por defecto
+
+aplicar_fuente_corporativa()
 
 # =========================================================
 # SISTEMA DE LOGIN Y SEGURIDAD
@@ -332,7 +371,6 @@ with tab2:
 
     st.markdown("---")
     st.markdown("### 📢 Material Publicado")
-    # Lógica inteligente especial para el gráfico de Material Publicado
     df_pub = df.copy()
     col_f1, col_f2, col_f3 = st.columns([1.5, 1.5, 1])
     
