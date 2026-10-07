@@ -5,6 +5,7 @@ import plotly.express as px
 from datetime import datetime
 from github import Github
 import base64
+import io
 
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 
@@ -311,7 +312,27 @@ with tab1:
             st.rerun()
 
     st.markdown("---")
-    st.subheader("📊 Tabla de Registros")
+    
+    # --- BOTÓN DE DESCARGA EXCEL ---
+    col_tit_tabla, col_btn_tabla = st.columns([4, 1])
+    with col_tit_tabla:
+        st.subheader("📊 Tabla de Registros")
+    with col_btn_tabla:
+        st.write("") # Pequeño espaciador para alinear con el título
+        # Convertimos todo a texto para evitar conflictos de formato en Excel
+        df_excel = df_mostrar.astype(str)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_excel.to_excel(writer, index=False, sheet_name='Registros')
+        
+        st.download_button(
+            label="📥 Descargar Excel",
+            data=buffer.getvalue(),
+            file_name=f"Registros_Tinka_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
     st.dataframe(df_mostrar.astype(str), use_container_width=True)
 
 with tab2:
@@ -345,14 +366,33 @@ with tab2:
         return df_res
 
     st.markdown("---")
-    st.markdown("### 📅 Evolución de Ganadores")
+    
+    col_tit_ev, col_op_ev = st.columns([3, 1])
+    with col_tit_ev:
+        st.markdown("### 📅 Evolución de Ganadores")
+    with col_op_ev:
+        st.write("")
+        agrupacion_ev = st.radio("Agrupar gráfico por:", ["Días", "Meses"], horizontal=True, key="radio_ev")
+        
     df_ev = aplicar_filtros_locales(df, "ev")
     if not df_ev.empty and col_fecha in df.columns:
-        evolutivo = df_ev.groupby(df_ev[col_fecha].dt.date).size().reset_index(name='Cantidad de Fotos')
-        evolutivo.columns = ['Fecha', 'Cantidad']
+        if agrupacion_ev == "Días":
+            evolutivo = df_ev.groupby(df_ev[col_fecha].dt.date).size().reset_index(name='Cantidad')
+            evolutivo.columns = ['Fecha', 'Cantidad']
+        else:
+            df_ev['Mes_Str'] = df_ev[col_fecha].dt.strftime('%Y-%m')
+            evolutivo = df_ev.groupby('Mes_Str').size().reset_index(name='Cantidad')
+            evolutivo.columns = ['Fecha', 'Cantidad']
+            
         fig_line = px.line(evolutivo, x='Fecha', y='Cantidad', markers=True)
         fig_line.update_traces(line_color=color_naranja, marker=dict(color=color_naranja))
+        
+        if agrupacion_ev == "Meses":
+            fig_line.update_layout(xaxis_type='category')
+            
         st.plotly_chart(fig_line, use_container_width=True)
+    else:
+        st.warning("No hay datos para mostrar con estos filtros.")
 
     st.markdown("---")
     st.markdown("### 🏅 Top Promotoras")
