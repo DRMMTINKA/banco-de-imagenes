@@ -6,8 +6,18 @@ from datetime import datetime
 from github import Github
 import base64
 import io
+import google.generativeai as genai
 
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
+
+# =========================================================
+# CONFIGURACIÓN DE GEMINI IA
+# =========================================================
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    modelo_ia = None
 
 # =========================================================
 # INYECCIÓN DE FUENTE CORPORATIVA DUPLET (.woff2)
@@ -33,11 +43,9 @@ def aplicar_fuente_corporativa():
             font-weight: bold;
             font-style: normal;
         }}
-        /* Aplicar la fuente corporativa a textos */
         html, body, .stApp, p, h1, h2, h3, h4, h5, h6, div, span, label, button {{
             font-family: 'Duplet', sans-serif !important;
         }}
-        /* Proteger los íconos nativos de Streamlit */
         .material-symbols-rounded, 
         [data-testid="stIconMaterial"], 
         i.material-icons,
@@ -140,8 +148,8 @@ col_fecha = next((c for c in df.columns if 'FECHA DE CARGA' in c), next((c for c
 col_carpeta = next((c for c in df.columns if 'CARPET' in c), 'NOMBRE DE CARPETA')
 col_ganador = next((c for c in df.columns if 'GANADOR' in c), 'NOMBRE GANADOR')
 col_monto = next((c for c in df.columns if 'MONTO' in c), 'MONTO')
-
 col_pub = next((c for c in df.columns if 'PUBLICACI' in c), None)
+
 if not col_pub:
     df['FECHA PUBLICACIÓN'] = ""
     col_pub = 'FECHA PUBLICACIÓN'
@@ -239,8 +247,8 @@ with st.sidebar.form("form_nuevo"):
                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
                 st.success(f"✅ ¡Guardado con éxito! Carpeta: {nueva_carpeta}")
 
-# --- ÁREA CENTRAL ---
-tab1, tab2, tab3 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales"])
+# --- ÁREA CENTRAL (AÑADIMOS TAB 4) ---
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
 
 with tab1:
     if col_fecha in df.columns:
@@ -313,13 +321,11 @@ with tab1:
 
     st.markdown("---")
     
-    # --- BOTÓN DE DESCARGA EXCEL ---
     col_tit_tabla, col_btn_tabla = st.columns([4, 1])
     with col_tit_tabla:
         st.subheader("📊 Tabla de Registros")
     with col_btn_tabla:
-        st.write("") # Pequeño espaciador para alinear con el título
-        # Convertimos todo a texto para evitar conflictos de formato en Excel
+        st.write("")
         df_excel = df_mostrar.astype(str)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -469,3 +475,55 @@ with tab3:
         df_term_editado.to_csv("terminales.csv", index=False)
         sincronizar_con_github("terminales.csv", "terminales.csv", "Catálogo actualizado")
         st.success("¡Base de datos actualizada!")
+
+with tab4:
+    st.subheader("🤖 Asistente Analista de La Tinka")
+    st.markdown("Pregúntame cualquier dato sobre los ganadores, montos, terminales o estados de publicación.")
+    
+    if modelo_ia is None:
+        st.warning("⚠️ Falta configurar la API Key de Gemini en los Secrets de Streamlit.")
+    else:
+        # Inicializar historial de chat
+        if "mensajes_chat" not in st.session_state:
+            st.session_state.mensajes_chat = []
+            
+        # Mostrar historial de mensajes
+        for mensaje in st.session_state.mensajes_chat:
+            with st.chat_message(mensaje["rol"]):
+                st.markdown(mensaje["contenido"])
+                
+        # Entrada de chat
+        pregunta_usuario = st.chat_input("Ejemplo: ¿Cuántas fotos de Tinka faltan publicar?")
+        
+        if pregunta_usuario:
+            # Mostrar pregunta del usuario
+            with st.chat_message("user"):
+                st.markdown(pregunta_usuario)
+            st.session_state.mensajes_chat.append({"rol": "user", "contenido": pregunta_usuario})
+            
+            # Preparar los datos en texto para Gemini
+            datos_csv = df.to_csv(index=False)
+            prompt_contexto = f"""
+            Actúa como un experto analista de datos para la marca de lotería peruana 'La Tinka'.
+            A continuación te entrego la base de datos actualizada con los registros de ganadores y fotos subidas:
+            
+            {datos_csv}
+            
+            Reglas importantes para tus respuestas:
+            1. Responde basándote EXCLUSIVAMENTE en los datos de arriba.
+            2. Sé breve, amable, profesional y directo al grano.
+            3. Si te preguntan algo que no está en la tabla, di amablemente que no tienes esa información.
+            
+            Pregunta del usuario: {pregunta_usuario}
+            """
+            
+            # Generar respuesta de Gemini
+            with st.chat_message("assistant"):
+                with st.spinner("Analizando la base de datos..."):
+                    try:
+                        respuesta = modelo_ia.generate_content(prompt_contexto)
+                        texto_respuesta = respuesta.text
+                        st.markdown(texto_respuesta)
+                        st.session_state.mensajes_chat.append({"rol": "assistant", "contenido": texto_respuesta})
+                    except Exception as e:
+                        st.error(f"Ocurrió un error al consultar a Gemini: {e}")
