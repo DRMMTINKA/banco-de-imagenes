@@ -11,14 +11,27 @@ import google.generativeai as genai
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 
 # =========================================================
-# CONFIGURACIÓN DE GEMINI IA
+# CONFIGURACIÓN DE GEMINI IA (SELECCIÓN DINÁMICA)
 # =========================================================
+modelo_ia = None
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Usamos gemini-pro que es el estándar universal más estable
-    modelo_ia = genai.GenerativeModel('gemini-pro')
-else:
-    modelo_ia = None
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        
+        # Le pedimos a Google la lista exacta de modelos permitidos para tu llave
+        modelos_disponibles = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                # Limpiamos el nombre por si viene con el prefijo 'models/'
+                nombre = m.name.replace('models/', '')
+                modelos_disponibles.append(nombre)
+        
+        if modelos_disponibles:
+            # Buscamos el modelo más rápido ('flash') o nos quedamos con el primero que funcione
+            modelo_elegido = next((m for m in modelos_disponibles if 'flash' in m), modelos_disponibles[0])
+            modelo_ia = genai.GenerativeModel(modelo_elegido)
+    except Exception as e:
+        st.error(f"Error interno al cargar modelos de Google: {e}")
 
 # =========================================================
 # INYECCIÓN DE FUENTE CORPORATIVA DUPLET (.woff2)
@@ -482,7 +495,7 @@ with tab4:
     st.markdown("Pregúntame cualquier dato sobre los ganadores, montos, terminales o estados de publicación.")
     
     if modelo_ia is None:
-        st.warning("⚠️ Falta configurar la API Key de Gemini en los Secrets de Streamlit.")
+        st.error("⚠️ Hubo un problema al conectar con Gemini. Verifica que tu API Key sea correcta o intenta hacer 'Reboot'.")
     else:
         if "mensajes_chat" not in st.session_state:
             st.session_state.mensajes_chat = []
@@ -521,4 +534,4 @@ with tab4:
                         st.markdown(texto_respuesta)
                         st.session_state.mensajes_chat.append({"rol": "assistant", "contenido": texto_respuesta})
                     except Exception as e:
-                        st.error(f"Ocurrió un error al consultar a Gemini: {e}")
+                        st.error(f"Ocurrió un error al procesar la respuesta: {e}")
