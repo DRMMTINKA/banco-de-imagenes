@@ -11,27 +11,16 @@ import google.generativeai as genai
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 
 # =========================================================
-# CONFIGURACIÓN DE GEMINI IA (SELECCIÓN DINÁMICA)
+# CONFIGURACIÓN DE GEMINI IA (VERSIÓN 3.8-FLASH)
 # =========================================================
 modelo_ia = None
 if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        
-        # Le pedimos a Google la lista exacta de modelos permitidos para tu llave
-        modelos_disponibles = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                # Limpiamos el nombre por si viene con el prefijo 'models/'
-                nombre = m.name.replace('models/', '')
-                modelos_disponibles.append(nombre)
-        
-        if modelos_disponibles:
-            # Buscamos el modelo más rápido ('flash') o nos quedamos con el primero que funcione
-            modelo_elegido = next((m for m in modelos_disponibles if 'flash' in m), modelos_disponibles[0])
-            modelo_ia = genai.GenerativeModel(modelo_elegido)
+        # Forzamos exactamente el modelo que pide la API de Google
+        modelo_ia = genai.GenerativeModel('gemini-3.8-flash')
     except Exception as e:
-        st.error(f"Error interno al cargar modelos de Google: {e}")
+        st.error(f"Error interno al cargar la IA de Google: {e}")
 
 # =========================================================
 # INYECCIÓN DE FUENTE CORPORATIVA DUPLET (.woff2)
