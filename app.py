@@ -15,7 +15,8 @@ st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 # =========================================================
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
+    # Usamos gemini-pro que es el estándar universal más estable
+    modelo_ia = genai.GenerativeModel('gemini-pro')
 else:
     modelo_ia = None
 
@@ -247,7 +248,7 @@ with st.sidebar.form("form_nuevo"):
                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
                 st.success(f"✅ ¡Guardado con éxito! Carpeta: {nueva_carpeta}")
 
-# --- ÁREA CENTRAL (AÑADIMOS TAB 4) ---
+# --- ÁREA CENTRAL ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
 
 with tab1:
@@ -483,25 +484,20 @@ with tab4:
     if modelo_ia is None:
         st.warning("⚠️ Falta configurar la API Key de Gemini en los Secrets de Streamlit.")
     else:
-        # Inicializar historial de chat
         if "mensajes_chat" not in st.session_state:
             st.session_state.mensajes_chat = []
             
-        # Mostrar historial de mensajes
         for mensaje in st.session_state.mensajes_chat:
             with st.chat_message(mensaje["rol"]):
                 st.markdown(mensaje["contenido"])
                 
-        # Entrada de chat
         pregunta_usuario = st.chat_input("Ejemplo: ¿Cuántas fotos de Tinka faltan publicar?")
         
         if pregunta_usuario:
-            # Mostrar pregunta del usuario
             with st.chat_message("user"):
                 st.markdown(pregunta_usuario)
             st.session_state.mensajes_chat.append({"rol": "user", "contenido": pregunta_usuario})
             
-            # Preparar los datos en texto para Gemini
             datos_csv = df.to_csv(index=False)
             prompt_contexto = f"""
             Actúa como un experto analista de datos para la marca de lotería peruana 'La Tinka'.
@@ -517,7 +513,6 @@ with tab4:
             Pregunta del usuario: {pregunta_usuario}
             """
             
-            # Generar respuesta de Gemini
             with st.chat_message("assistant"):
                 with st.spinner("Analizando la base de datos..."):
                     try:
