@@ -7,6 +7,8 @@ from github import Github
 import base64
 import io
 import google.generativeai as genai
+from fpdf import FPDF
+import tempfile
 
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 
@@ -291,7 +293,10 @@ with tab1:
                     if len(archivos) > 0:
                         columnas = st.columns(len(archivos))
                         for i, archivo in enumerate(archivos):
-                            with open(os.path.join(carpeta, archivo), "rb") as f:
+                            ruta_foto_actual = os.path.join(carpeta, archivo)
+                            # === NUEVA FUNCIONALIDAD: GALERÍA VISUAL ===
+                            columnas[i].image(ruta_foto_actual, use_container_width=True)
+                            with open(ruta_foto_actual, "rb") as f:
                                 columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}")
                     else:
                         st.info("Carpeta sin fotos válidas.")
@@ -374,25 +379,49 @@ with tab2:
         return df_res
 
     st.markdown("---")
-    
-    # ---------------------------------------------------------
-    # NUEVO: RESUMEN EJECUTIVO (KPIs, MIX PRODUCTO, REQUISITOS)
-    # ---------------------------------------------------------
     st.markdown("### 📊 Resumen Ejecutivo")
     df_resumen = aplicar_filtros_locales(df, "resumen")
     
     if not df_resumen.empty:
-        # Calcular KPIs
         total_ganadores = len(df_resumen)
         val_pub_res = df_resumen[col_pub].astype(str).str.strip().str.lower()
         fotos_pendientes = val_pub_res.isin(["", "nan", "nat", "none"]).sum()
         fotos_publicadas = total_ganadores - fotos_pendientes
         
-        # Mostrar Tarjetas KPI
         col_k1, col_k2, col_k3 = st.columns(3)
         col_k1.metric("🎟️ Total Ganadores", total_ganadores)
         col_k2.metric("🟢 Fotos Publicadas", fotos_publicadas)
         col_k3.metric("🔴 Fotos Pendientes", fotos_pendientes)
+        
+        # === NUEVA FUNCIONALIDAD: GENERADOR DE PDF ===
+        st.markdown("<br>", unsafe_allow_html=True)
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(200, 10, txt="REPORTE DE PREMIOS SECUNDARIOS - LA TINKA", ln=True, align="C")
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(200, 10, txt=f"Generado el: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+        pdf.ln(10)
+        
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(200, 10, txt="RESUMEN EJECUTIVO", ln=True)
+        pdf.set_font("Arial", "", 12)
+        pdf.cell(200, 10, txt=f"- Total Ganadores Registrados: {total_ganadores}", ln=True)
+        pdf.cell(200, 10, txt=f"- Fotos Publicadas: {fotos_publicadas}", ln=True)
+        pdf.cell(200, 10, txt=f"- Fotos Pendientes: {fotos_pendientes}", ln=True)
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            pdf.output(tmp.name)
+            with open(tmp.name, "rb") as f:
+                pdf_data = f.read()
+                
+        st.download_button(
+            label="📄 Descargar Reporte en PDF",
+            data=pdf_data,
+            file_name=f"Reporte_Gerencial_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
         
         st.markdown("<br>", unsafe_allow_html=True)
         
