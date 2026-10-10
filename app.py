@@ -17,7 +17,6 @@ modelo_ia = None
 if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # Forzamos exactamente el modelo que pide la API de Google
         modelo_ia = genai.GenerativeModel('gemini-3.8-flash')
     except Exception as e:
         st.error(f"Error interno al cargar la IA de Google: {e}")
@@ -376,6 +375,52 @@ with tab2:
 
     st.markdown("---")
     
+    # ---------------------------------------------------------
+    # NUEVO: RESUMEN EJECUTIVO (KPIs, MIX PRODUCTO, REQUISITOS)
+    # ---------------------------------------------------------
+    st.markdown("### 📊 Resumen Ejecutivo")
+    df_resumen = aplicar_filtros_locales(df, "resumen")
+    
+    if not df_resumen.empty:
+        # Calcular KPIs
+        total_ganadores = len(df_resumen)
+        val_pub_res = df_resumen[col_pub].astype(str).str.strip().str.lower()
+        fotos_pendientes = val_pub_res.isin(["", "nan", "nat", "none"]).sum()
+        fotos_publicadas = total_ganadores - fotos_pendientes
+        
+        # Mostrar Tarjetas KPI
+        col_k1, col_k2, col_k3 = st.columns(3)
+        col_k1.metric("🎟️ Total Ganadores", total_ganadores)
+        col_k2.metric("🟢 Fotos Publicadas", fotos_publicadas)
+        col_k3.metric("🔴 Fotos Pendientes", fotos_pendientes)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col_graf1, col_graf2 = st.columns(2)
+        with col_graf1:
+            st.markdown("**🎯 Mix de Productos**")
+            if col_producto in df_resumen.columns:
+                conteo_prod = df_resumen[col_producto].value_counts().reset_index()
+                conteo_prod.columns = ['Producto', 'Cantidad']
+                fig_prod = px.pie(conteo_prod, values='Cantidad', names='Producto', hole=0.4,
+                                  color_discrete_sequence=[color_verde, color_amarillo, color_naranja, color_verde_limon])
+                st.plotly_chart(fig_prod, use_container_width=True)
+                
+        with col_graf2:
+            st.markdown("**✔️ Cumplimiento de Requisitos**")
+            if col_req in df_resumen.columns:
+                req_limpio = df_resumen[col_req].astype(str).str.upper().str.strip()
+                req_limpio = req_limpio.replace({'SI': 'SÍ', '': 'SIN DATO'})
+                conteo_req = req_limpio.value_counts().reset_index()
+                conteo_req.columns = ['Requisito', 'Cantidad']
+                fig_req = px.pie(conteo_req, values='Cantidad', names='Requisito', hole=0.4,
+                                 color_discrete_map={"SÍ": color_verde_limon, "NO": color_rojo, "SIN DATO": "gray"})
+                st.plotly_chart(fig_req, use_container_width=True)
+    else:
+        st.warning("No hay datos para mostrar en el resumen ejecutivo.")
+        
+    st.markdown("---")
+    
     col_tit_ev, col_op_ev = st.columns([3, 1])
     with col_tit_ev:
         st.markdown("### 📅 Evolución de Ganadores")
@@ -404,22 +449,52 @@ with tab2:
         st.warning("No hay datos para mostrar con estos filtros.")
 
     st.markdown("---")
-    st.markdown("### 🏅 Top Promotoras")
+    
+    col_tit_prom, col_op_prom = st.columns([3, 1.5])
+    with col_tit_prom:
+        st.markdown("### 🏅 Top Promotoras")
+    with col_op_prom:
+        st.write("")
+        metrica_prom = st.radio("Medir por:", ["Cantidad", "Monto (S/)"], horizontal=True, key="rad_prom")
+        
     df_prom = aplicar_filtros_locales(df, "prom")
     if not df_prom.empty and col_promotora in df.columns:
-        ranking_p = df_prom[col_promotora].value_counts().reset_index()
-        ranking_p.columns = ['Promotora', 'Apariciones']
-        fig_p = px.bar(ranking_p.head(10), x='Promotora', y='Apariciones', text_auto=True)
+        if metrica_prom == "Cantidad":
+            ranking_p = df_prom[col_promotora].value_counts().reset_index()
+            ranking_p.columns = ['Promotora', 'Valor']
+            fig_p = px.bar(ranking_p.head(10), x='Promotora', y='Valor', text_auto=True, labels={'Valor': 'Apariciones'})
+        else:
+            df_prom['Monto_Num'] = pd.to_numeric(df_prom[col_monto], errors='coerce').fillna(0)
+            ranking_p = df_prom.groupby(col_promotora)['Monto_Num'].sum().reset_index()
+            ranking_p.columns = ['Promotora', 'Valor']
+            ranking_p = ranking_p.sort_values(by='Valor', ascending=False)
+            fig_p = px.bar(ranking_p.head(10), x='Promotora', y='Valor', text_auto='.2s', labels={'Valor': 'Monto Acumulado (S/)'})
+            
         fig_p.update_traces(marker_color=color_verde)
         st.plotly_chart(fig_p, use_container_width=True)
 
     st.markdown("---")
-    st.markdown("### 🏆 Top Terminales")
+    
+    col_tit_term, col_op_term = st.columns([3, 1.5])
+    with col_tit_term:
+        st.markdown("### 🏆 Top Terminales")
+    with col_op_term:
+        st.write("")
+        metrica_term = st.radio("Medir por:", ["Cantidad", "Monto (S/)"], horizontal=True, key="rad_term")
+        
     df_term = aplicar_filtros_locales(df, "term")
     if not df_term.empty and 'NOMBRE DE TERMINAL' in df.columns:
-        ranking_t = df_term['NOMBRE DE TERMINAL'].value_counts().reset_index()
-        ranking_t.columns = ['Terminal', 'Ganadores']
-        fig_bar = px.bar(ranking_t.head(10), x='Terminal', y='Ganadores', text_auto=True)
+        if metrica_term == "Cantidad":
+            ranking_t = df_term['NOMBRE DE TERMINAL'].value_counts().reset_index()
+            ranking_t.columns = ['Terminal', 'Valor']
+            fig_bar = px.bar(ranking_t.head(10), x='Terminal', y='Valor', text_auto=True, labels={'Valor': 'Ganadores'})
+        else:
+            df_term['Monto_Num'] = pd.to_numeric(df_term[col_monto], errors='coerce').fillna(0)
+            ranking_t = df_term.groupby('NOMBRE DE TERMINAL')['Monto_Num'].sum().reset_index()
+            ranking_t.columns = ['Terminal', 'Valor']
+            ranking_t = ranking_t.sort_values(by='Valor', ascending=False)
+            fig_bar = px.bar(ranking_t.head(10), x='Terminal', y='Valor', text_auto='.2s', labels={'Valor': 'Monto Acumulado (S/)'})
+            
         fig_bar.update_traces(marker_color=color_amarillo)
         st.plotly_chart(fig_bar, use_container_width=True)
 
