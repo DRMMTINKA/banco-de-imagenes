@@ -294,15 +294,20 @@ with tab1:
                         columnas = st.columns(len(archivos))
                         for i, archivo in enumerate(archivos):
                             ruta_foto_actual = os.path.join(carpeta, archivo)
-                            # === NUEVA FUNCIONALIDAD: GALERÍA VISUAL ===
-                            columnas[i].image(ruta_foto_actual, use_container_width=True)
+                            # === MINUATURA DE FOTO DE ANCHO FIJO (MÁS PEQUEÑA) ===
+                            columnas[i].image(ruta_foto_actual, use_container_width=False, width=280)
+                            
                             with open(ruta_foto_actual, "rb") as f:
                                 columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}")
                     else:
                         st.info("Carpeta sin fotos válidas.")
                     
                     st.markdown("---")
-                    col_fechapub, col_btnpub = st.columns([2, 1])
+                    
+                    # === NUEVA BOTONERA DOBLE: PUBLICACIÓN Y REQUISITOS ===
+                    val_req_actual = str(row[col_req]).strip().upper() if col_req in df.columns else ""
+                    
+                    col_fechapub, col_btnpub, col_req_val, col_btnreq = st.columns([1.5, 1, 1.5, 1])
                     with col_fechapub:
                         nueva_fecha_pub = st.date_input("Fecha de Publicación", key=f"date_pub_{carpeta}_{index}")
                     with col_btnpub:
@@ -315,11 +320,23 @@ with tab1:
                                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Publicado: {ganador}")
                                 st.rerun()
                         else:
-                            if st.button("❌ Revertir a 'Sin Publicar'", key=f"btn_rev_{carpeta}_{index}", use_container_width=True):
+                            if st.button("❌ Revertir Publicación", key=f"btn_rev_{carpeta}_{index}", use_container_width=True):
                                 df.at[index, col_pub] = ""
                                 df.to_excel("datos.xlsx", index=False)
                                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Revertido: {ganador}")
                                 st.rerun()
+                                
+                    with col_req_val:
+                        idx_opcion = 1 if val_req_actual == "NO" else 0
+                        nuevo_req = st.selectbox("Requisitos Aptos:", ["SÍ", "NO"], index=idx_opcion, key=f"sel_req_{carpeta}_{index}")
+                    with col_btnreq:
+                        st.write("") 
+                        st.write("") 
+                        if st.button("💾 Guardar Apto", key=f"btn_req_sv_{carpeta}_{index}", use_container_width=True):
+                            df.at[index, col_req] = nuevo_req
+                            df.to_excel("datos.xlsx", index=False)
+                            sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Requisito cambiado a {nuevo_req}: {ganador}")
+                            st.rerun()
 
     if len(df_mostrar) > st.session_state["num_fotos"]:
         if st.button("⬇️ VER MÁS FOTOS", use_container_width=True):
@@ -384,16 +401,30 @@ with tab2:
     
     if not df_resumen.empty:
         total_ganadores = len(df_resumen)
-        val_pub_res = df_resumen[col_pub].astype(str).str.strip().str.lower()
-        fotos_pendientes = val_pub_res.isin(["", "nan", "nat", "none"]).sum()
-        fotos_publicadas = total_ganadores - fotos_pendientes
         
-        col_k1, col_k2, col_k3 = st.columns(3)
+        # === CÁLCULO DE KPIS CON NUEVA LÓGICA DE FOTOS NO APTAS ===
+        if col_req in df_resumen.columns:
+            req_limpios = df_resumen[col_req].astype(str).str.strip().str.upper()
+            fotos_no_aptas = (req_limpios == "NO").sum()
+            es_apto = (req_limpios != "NO")
+        else:
+            fotos_no_aptas = 0
+            es_apto = pd.Series(True, index=df_resumen.index)
+            
+        val_pub_res = df_resumen[col_pub].astype(str).str.strip().str.lower()
+        es_no_publicado = val_pub_res.isin(["", "nan", "nat", "none"])
+        
+        fotos_publicadas = (~es_no_publicado).sum()
+        # Para que sea "Pendiente", no debe estar publicado Y SÍ debe cumplir los requisitos
+        fotos_pendientes = (es_no_publicado & es_apto).sum()
+        
+        # Mostrar 4 métricas
+        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
         col_k1.metric("🎟️ Total Ganadores", total_ganadores)
         col_k2.metric("🟢 Fotos Publicadas", fotos_publicadas)
-        col_k3.metric("🔴 Fotos Pendientes", fotos_pendientes)
+        col_k3.metric("🟡 Pendientes (Aptas)", fotos_pendientes)
+        col_k4.metric("🔴 No Aptas (Descartadas)", fotos_no_aptas)
         
-        # === NUEVA FUNCIONALIDAD: GENERADOR DE PDF ===
         st.markdown("<br>", unsafe_allow_html=True)
         pdf = FPDF()
         pdf.add_page()
@@ -408,7 +439,8 @@ with tab2:
         pdf.set_font("Arial", "", 12)
         pdf.cell(200, 10, txt=f"- Total Ganadores Registrados: {total_ganadores}", ln=True)
         pdf.cell(200, 10, txt=f"- Fotos Publicadas: {fotos_publicadas}", ln=True)
-        pdf.cell(200, 10, txt=f"- Fotos Pendientes: {fotos_pendientes}", ln=True)
+        pdf.cell(200, 10, txt=f"- Fotos Pendientes (Aptas): {fotos_pendientes}", ln=True)
+        pdf.cell(200, 10, txt=f"- Fotos No Aptas (Descartadas): {fotos_no_aptas}", ln=True)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             pdf.output(tmp.name)
