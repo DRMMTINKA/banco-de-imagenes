@@ -274,13 +274,18 @@ with tab1:
             str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto in df.columns and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
             str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto in df.columns and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
             
+            # --- LÓGICA DE ETIQUETAS MEJORADA (NO APTA VS SIN PUBLICAR) ---
             val_pub = str(row[col_pub]).strip().lower()
+            val_req_actual = str(row[col_req]).strip().upper() if col_req in df.columns else ""
+            
             esta_publicado = False
-            if val_pub in ["", "nan", "nat", "none"]:
-                str_pub = " | 🔴 SIN PUBLICAR"
-            else:
+            if val_pub not in ["", "nan", "nat", "none"]:
                 str_pub = f" | 🟢 PUBLICADO ({val_pub})"
                 esta_publicado = True
+            elif val_req_actual == "NO":
+                str_pub = " | ❌ NO APTA"
+            else:
+                str_pub = " | 🔴 SIN PUBLICAR"
             
             etiqueta = ""
             if col_fecha in df.columns and pd.notna(row[col_fecha]):
@@ -305,8 +310,6 @@ with tab1:
                     st.markdown("---")
                     
                     # === NUEVA BOTONERA DOBLE: PUBLICACIÓN Y REQUISITOS ===
-                    val_req_actual = str(row[col_req]).strip().upper() if col_req in df.columns else ""
-                    
                     col_fechapub, col_btnpub, col_req_val, col_btnreq = st.columns([1.5, 1, 1.5, 1])
                     with col_fechapub:
                         nueva_fecha_pub = st.date_input("Fecha de Publicación", key=f"date_pub_{carpeta}_{index}")
@@ -402,7 +405,6 @@ with tab2:
     if not df_resumen.empty:
         total_ganadores = len(df_resumen)
         
-        # === CÁLCULO DE KPIS CON NUEVA LÓGICA DE FOTOS NO APTAS ===
         if col_req in df_resumen.columns:
             req_limpios = df_resumen[col_req].astype(str).str.strip().str.upper()
             fotos_no_aptas = (req_limpios == "NO").sum()
@@ -415,10 +417,8 @@ with tab2:
         es_no_publicado = val_pub_res.isin(["", "nan", "nat", "none"])
         
         fotos_publicadas = (~es_no_publicado).sum()
-        # Para que sea "Pendiente", no debe estar publicado Y SÍ debe cumplir los requisitos
         fotos_pendientes = (es_no_publicado & es_apto).sum()
         
-        # Mostrar 4 métricas
         col_k1, col_k2, col_k3, col_k4 = st.columns(4)
         col_k1.metric("🎟️ Total Ganadores", total_ganadores)
         col_k2.metric("🟢 Fotos Publicadas", fotos_publicadas)
