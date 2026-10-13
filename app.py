@@ -239,12 +239,10 @@ if term_seleccionado != "":
     super_auto = datos_term.get('SUPERVISOR', '')
     st.sidebar.success(f"**Sede:** {nombre_auto}\n**Sup:** {super_auto}")
 
-# Mostramos el mensaje de éxito aquí arriba si venimos de un guardado exitoso
 if "mensaje_exito" in st.session_state:
     st.sidebar.success(st.session_state["mensaje_exito"])
     del st.session_state["mensaje_exito"]
 
-# Añadimos clear_on_submit=True para vaciar los campos
 with st.sidebar.form("form_nuevo", clear_on_submit=True):
     nuevo_producto = st.selectbox("Producto", ["TINKA", "KÁBALA", "RAPITINKA", "GANA DIARIO"])
     nueva_promotora = st.text_input("Nombre de la Promotora")
@@ -305,12 +303,91 @@ with st.sidebar.form("form_nuevo", clear_on_submit=True):
                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
                 enviar_alerta_correo(nuevo_ganador, nuevo_producto, nueva_promotora, nuevo_monto, nombre_auto, nueva_carpeta)
                 
-                # Guardamos el mensaje en la memoria y recargamos la página al instante
                 st.session_state["mensaje_exito"] = f"✅ ¡Guardado con éxito! Carpeta: {nueva_carpeta}"
                 st.rerun()
 
+# =========================================================
+# FUNCIÓN REUTILIZABLE PARA MOSTRAR CARPETAS DE FOTOS
+# =========================================================
+def renderizar_tarjeta_ganador(index, row, dataframe):
+    carpeta = str(row[col_carpeta]).strip()
+    ganador = str(row[col_ganador]).strip()
+    str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto in dataframe.columns and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
+    str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto in dataframe.columns and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
+    
+    val_pub = str(row[col_pub]).strip().lower()
+    val_req_actual = str(row[col_req]).strip().upper() if col_req in dataframe.columns else ""
+    
+    esta_publicado = False
+    if val_pub not in ["", "nan", "nat", "none"]:
+        str_pub = f" | 🟢 PUBLICADO ({val_pub})"
+        esta_publicado = True
+    elif val_req_actual == "NO":
+        str_pub = " | ❌ NO APTA"
+    else:
+        str_pub = " | 🔴 SIN PUBLICAR"
+    
+    etiqueta = ""
+    if col_fecha in dataframe.columns and pd.notna(row[col_fecha]):
+        if (datetime.now() - row[col_fecha]).days <= 3:
+            etiqueta = " 🆕 NUEVO"
+    
+    if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
+        with st.expander(f"👤 {ganador}{str_prod}{str_monto}{str_pub} (Código: {carpeta}){etiqueta}"):
+            archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            if len(archivos) > 0:
+                columnas = st.columns(len(archivos))
+                for i, archivo in enumerate(archivos):
+                    ruta_foto_actual = os.path.join(carpeta, archivo)
+                    columnas[i].image(ruta_foto_actual, use_container_width=False, width=280)
+                    
+                    # Generamos un identificador único para que los botones funcionen en la vista catálogo también
+                    id_vista = str(st.session_state.get('vista_catalogo', False))
+                    with open(ruta_foto_actual, "rb") as f:
+                        columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}_{id_vista}")
+            else:
+                st.info("Carpeta sin fotos válidas.")
+            
+            st.markdown("---")
+            
+            col_fechapub, col_btnpub, col_req_val, col_btnreq = st.columns([1.5, 1, 1.5, 1])
+            id_vista = str(st.session_state.get('vista_catalogo', False))
+            with col_fechapub:
+                nueva_fecha_pub = st.date_input("Fecha de Publicación", key=f"date_pub_{carpeta}_{index}_{id_vista}")
+            with col_btnpub:
+                st.write("") 
+                st.write("") 
+                if not esta_publicado:
+                    if st.button("✅ Marcar Publicado", key=f"btn_upd_{carpeta}_{index}_{id_vista}", use_container_width=True):
+                        dataframe.at[index, col_pub] = pd.to_datetime(nueva_fecha_pub).strftime('%Y-%m-%d')
+                        dataframe.to_excel("datos.xlsx", index=False)
+                        sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Publicado: {ganador}")
+                        st.rerun()
+                else:
+                    if st.button("❌ Revertir Publicación", key=f"btn_rev_{carpeta}_{index}_{id_vista}", use_container_width=True):
+                        dataframe.at[index, col_pub] = ""
+                        dataframe.to_excel("datos.xlsx", index=False)
+                        sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Revertido: {ganador}")
+                        st.rerun()
+                        
+            with col_req_val:
+                idx_opcion = 1 if val_req_actual == "NO" else 0
+                nuevo_req = st.selectbox("Requisitos Aptos:", ["SÍ", "NO"], index=idx_opcion, key=f"sel_req_{carpeta}_{index}_{id_vista}")
+            with col_btnreq:
+                st.write("") 
+                st.write("") 
+                if st.button("💾 Guardar Apto", key=f"btn_req_sv_{carpeta}_{index}_{id_vista}", use_container_width=True):
+                    dataframe.at[index, col_req] = nuevo_req
+                    dataframe.to_excel("datos.xlsx", index=False)
+                    sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Requisito cambiado a {nuevo_req}: {ganador}")
+                    st.rerun()
+
 # --- ÁREA CENTRAL ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
+
+# Inicializamos el estado de la vista de catálogo
+if "vista_catalogo" not in st.session_state:
+    st.session_state["vista_catalogo"] = False
 
 with tab1:
     if col_fecha in df.columns:
@@ -318,88 +395,59 @@ with tab1:
     else:
         df_mostrar = df.iloc[::-1]
         
-    st.subheader("📥 Archivos Recientes")
-    
-    if "num_fotos" not in st.session_state:
-        st.session_state["num_fotos"] = 5
+    if not st.session_state["vista_catalogo"]:
+        # === VISTA ESTÁNDAR: ARCHIVOS RECIENTES ===
+        st.subheader("📥 Archivos Recientes")
         
-    df_fotos = df_mostrar.head(st.session_state["num_fotos"])
-    
-    if col_carpeta in df.columns and col_ganador in df.columns:
-        for index, row in df_fotos.iterrows():
-            carpeta = str(row[col_carpeta]).strip()
-            ganador = str(row[col_ganador]).strip()
-            str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto in df.columns and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
-            str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto in df.columns and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
+        if "num_fotos" not in st.session_state:
+            st.session_state["num_fotos"] = 5
             
-            val_pub = str(row[col_pub]).strip().lower()
-            val_req_actual = str(row[col_req]).strip().upper() if col_req in df.columns else ""
-            
-            esta_publicado = False
-            if val_pub not in ["", "nan", "nat", "none"]:
-                str_pub = f" | 🟢 PUBLICADO ({val_pub})"
-                esta_publicado = True
-            elif val_req_actual == "NO":
-                str_pub = " | ❌ NO APTA"
-            else:
-                str_pub = " | 🔴 SIN PUBLICAR"
-            
-            etiqueta = ""
-            if col_fecha in df.columns and pd.notna(row[col_fecha]):
-                if (datetime.now() - row[col_fecha]).days <= 3:
-                    etiqueta = " 🆕 NUEVO"
-            
-            if carpeta != "" and os.path.exists(carpeta) and os.path.isdir(carpeta):
-                with st.expander(f"👤 {ganador}{str_prod}{str_monto}{str_pub} (Código: {carpeta}){etiqueta}"):
-                    archivos = [a for a in os.listdir(carpeta) if a.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-                    if len(archivos) > 0:
-                        columnas = st.columns(len(archivos))
-                        for i, archivo in enumerate(archivos):
-                            ruta_foto_actual = os.path.join(carpeta, archivo)
-                            columnas[i].image(ruta_foto_actual, use_container_width=False, width=280)
-                            
-                            with open(ruta_foto_actual, "rb") as f:
-                                columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}")
-                    else:
-                        st.info("Carpeta sin fotos válidas.")
-                    
-                    st.markdown("---")
-                    
-                    col_fechapub, col_btnpub, col_req_val, col_btnreq = st.columns([1.5, 1, 1.5, 1])
-                    with col_fechapub:
-                        nueva_fecha_pub = st.date_input("Fecha de Publicación", key=f"date_pub_{carpeta}_{index}")
-                    with col_btnpub:
-                        st.write("") 
-                        st.write("") 
-                        if not esta_publicado:
-                            if st.button("✅ Marcar Publicado", key=f"btn_upd_{carpeta}_{index}", use_container_width=True):
-                                df.at[index, col_pub] = pd.to_datetime(nueva_fecha_pub).strftime('%Y-%m-%d')
-                                df.to_excel("datos.xlsx", index=False)
-                                sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Publicado: {ganador}")
-                                st.rerun()
-                        else:
-                            if st.button("❌ Revertir Publicación", key=f"btn_rev_{carpeta}_{index}", use_container_width=True):
-                                df.at[index, col_pub] = ""
-                                df.to_excel("datos.xlsx", index=False)
-                                sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Revertido: {ganador}")
-                                st.rerun()
-                                
-                    with col_req_val:
-                        idx_opcion = 1 if val_req_actual == "NO" else 0
-                        nuevo_req = st.selectbox("Requisitos Aptos:", ["SÍ", "NO"], index=idx_opcion, key=f"sel_req_{carpeta}_{index}")
-                    with col_btnreq:
-                        st.write("") 
-                        st.write("") 
-                        if st.button("💾 Guardar Apto", key=f"btn_req_sv_{carpeta}_{index}", use_container_width=True):
-                            df.at[index, col_req] = nuevo_req
-                            df.to_excel("datos.xlsx", index=False)
-                            sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Requisito cambiado a {nuevo_req}: {ganador}")
-                            st.rerun()
+        df_fotos = df_mostrar.head(st.session_state["num_fotos"])
+        
+        if col_carpeta in df.columns and col_ganador in df.columns:
+            for index, row in df_fotos.iterrows():
+                renderizar_tarjeta_ganador(index, row, df)
 
-    if len(df_mostrar) > st.session_state["num_fotos"]:
-        if st.button("⬇️ VER MÁS FOTOS", use_container_width=True):
-            st.session_state["num_fotos"] += 5
+        if len(df_mostrar) > st.session_state["num_fotos"]:
+            if st.button("⬇️ VER MÁS FOTOS", use_container_width=True):
+                st.session_state["num_fotos"] += 5
+                st.rerun()
+                
+        # Mostrar el botón del Catálogo solo si ya expandieron al menos una vez
+        if st.session_state["num_fotos"] > 5:
+            if st.button("📂 VER CATÁLOGO COMPLETO", use_container_width=True, type="secondary"):
+                st.session_state["vista_catalogo"] = True
+                st.rerun()
+                
+    else:
+        # === VISTA NUEVA: CATÁLOGO HISTÓRICO ===
+        st.subheader("🗂️ Catálogo Histórico (Por Mes y Año)")
+        if st.button("🔙 Volver a Archivos Recientes", use_container_width=True):
+            st.session_state["vista_catalogo"] = False
             st.rerun()
+            
+        st.markdown("---")
+        
+        df_cat = df_mostrar.dropna(subset=[col_fecha]).copy()
+        if not df_cat.empty:
+            meses_espanol = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
+                             7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+            
+            # Creamos una etiqueta "Mes Año" para agrupar
+            df_cat['Periodo'] = df_cat[col_fecha].dt.month.map(meses_espanol) + " " + df_cat[col_fecha].dt.year.astype(str)
+            periodos = df_cat['Periodo'].unique()
+            
+            col_filtro, _ = st.columns([2, 1])
+            with col_filtro:
+                periodo_seleccionado = st.selectbox("📅 Elige un mes para ver las carpetas:", periodos)
+                
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            df_mes = df_cat[df_cat['Periodo'] == periodo_seleccionado]
+            for index, row in df_mes.iterrows():
+                renderizar_tarjeta_ganador(index, row, df)
+        else:
+            st.info("No hay registros con fecha válida para agrupar.")
 
     st.markdown("---")
     
