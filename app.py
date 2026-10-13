@@ -239,7 +239,13 @@ if term_seleccionado != "":
     super_auto = datos_term.get('SUPERVISOR', '')
     st.sidebar.success(f"**Sede:** {nombre_auto}\n**Sup:** {super_auto}")
 
-with st.sidebar.form("form_nuevo"):
+# Mostramos el mensaje de éxito aquí arriba si venimos de un guardado exitoso
+if "mensaje_exito" in st.session_state:
+    st.sidebar.success(st.session_state["mensaje_exito"])
+    del st.session_state["mensaje_exito"]
+
+# Añadimos clear_on_submit=True para vaciar los campos
+with st.sidebar.form("form_nuevo", clear_on_submit=True):
     nuevo_producto = st.selectbox("Producto", ["TINKA", "KÁBALA", "RAPITINKA", "GANA DIARIO"])
     nueva_promotora = st.text_input("Nombre de la Promotora")
     nuevo_monto = st.text_input("Monto (Ej: 100)")
@@ -252,7 +258,7 @@ with st.sidebar.form("form_nuevo"):
     
     if enviado:
         if term_seleccionado == "":
-            st.error("Falta seleccionar Terminal.")
+            st.error("Falta seleccionar Terminal. Por favor, selecciónalo arriba.")
         elif not fotos:
             st.error("Debes subir al menos una foto.")
         else:
@@ -298,7 +304,10 @@ with st.sidebar.form("form_nuevo"):
                 
                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
                 enviar_alerta_correo(nuevo_ganador, nuevo_producto, nueva_promotora, nuevo_monto, nombre_auto, nueva_carpeta)
-                st.success(f"✅ ¡Guardado con éxito! Carpeta: {nueva_carpeta}")
+                
+                # Guardamos el mensaje en la memoria y recargamos la página al instante
+                st.session_state["mensaje_exito"] = f"✅ ¡Guardado con éxito! Carpeta: {nueva_carpeta}"
+                st.rerun()
 
 # --- ÁREA CENTRAL ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
@@ -685,20 +694,14 @@ with tab4:
             with st.chat_message("assistant"):
                 with st.spinner("Analizando la base de datos..."):
                     try:
-                        # === DIETA ESTRICTA DE DATOS PARA EVITAR CONGELAMIENTO ===
                         df_ia = df.copy()
-                        
-                        # 1. Eliminamos columnas pesadas que no sirven para análisis estadístico
                         columnas_basura = [col_carpeta]
                         if 'SUPERVISOR' in df_ia.columns: columnas_basura.append('SUPERVISOR')
                         df_ia = df_ia.drop(columns=[c for c in columnas_basura if c in df_ia.columns])
                         
-                        # 2. Límite de seguridad: Solo enviamos los 200 registros más recientes
-                        # (Más de 200 hace que la IA exceda su límite de lectura y se congele)
                         if len(df_ia) > 200:
                             df_ia = df_ia.tail(200)
                             
-                        # 3. Volvemos al CSV que consume muchísimos menos "tokens" que el JSON
                         datos_ligeros = df_ia.to_csv(index=False)
                         
                         prompt_contexto = f"""
