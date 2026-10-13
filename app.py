@@ -9,6 +9,9 @@ import io
 import google.generativeai as genai
 from fpdf import FPDF
 import tempfile
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 st.set_page_config(page_title="Ganadores de Premios Secundarios", layout="wide")
 
@@ -106,6 +109,51 @@ with col_logout:
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state["acceso_concedido"] = False
         st.rerun()
+
+# =========================================================
+# ENVÍO DE ALERTAS POR CORREO (OUTLOOK)
+# =========================================================
+def enviar_alerta_correo(ganador, producto, promotora, monto, terminal, carpeta):
+    try:
+        remitente = st.secrets.get("EMAIL_REMITENTE")
+        password = st.secrets.get("EMAIL_PASSWORD")
+        destino = st.secrets.get("EMAIL_DESTINO")
+        
+        if not remitente or not password or not destino:
+            return 
+            
+        msg = MIMEMultipart()
+        msg['From'] = remitente
+        msg['To'] = destino
+        msg['Subject'] = f"🔔 Nuevo Ganador Registrado: {ganador} ({producto})"
+        
+        cuerpo = f"""
+        ¡Hola!
+        
+        Se acaba de registrar un nuevo ganador en la plataforma de La Tinka.
+        Aquí tienes los detalles:
+        
+        • Ganador: {ganador}
+        • Producto: {producto}
+        • Promotora: {promotora}
+        • Monto Entregado: S/ {monto}
+        • Sede/Terminal: {terminal}
+        • Carpeta de Fotos: {carpeta}
+        
+        Ingresa a tu plataforma para revisar las fotos y validar los requisitos.
+        
+        Saludos,
+        Bot del Banco de Imágenes
+        """
+        msg.attach(MIMEText(cuerpo, 'plain'))
+        
+        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
+        server.starttls()
+        server.login(remitente, password)
+        server.sendmail(remitente, destino, msg.as_string())
+        server.quit()
+    except Exception as e:
+        print(f"Error al enviar correo: {e}")
 
 # =========================================================
 # CÓDIGO PRINCIPAL
@@ -208,7 +256,7 @@ with st.sidebar.form("form_nuevo"):
         elif not fotos:
             st.error("Debes subir al menos una foto.")
         else:
-            with st.spinner("Guardando en GitHub..."):
+            with st.spinner("Guardando en GitHub y enviando alerta..."):
                 fecha_str = nueva_fecha.strftime("%Y%m%d")
                 if col_carpeta in df.columns:
                     carpetas_existentes = df[col_carpeta].dropna().astype(str)
@@ -249,6 +297,7 @@ with st.sidebar.form("form_nuevo"):
                 df_final.to_excel("datos.xlsx", index=False)
                 
                 sincronizar_con_github("datos.xlsx", "datos.xlsx", f"Nuevo registro: {nuevo_ganador}")
+                enviar_alerta_correo(nuevo_ganador, nuevo_producto, nueva_promotora, nuevo_monto, nombre_auto, nueva_carpeta)
                 st.success(f"✅ ¡Guardado con éxito! Carpeta: {nueva_carpeta}")
 
 # --- ÁREA CENTRAL ---
@@ -274,7 +323,6 @@ with tab1:
             str_prod = f" | 🎟️ {str(row[col_producto]).strip()}" if col_producto in df.columns and pd.notna(row[col_producto]) and str(row[col_producto]).strip() != "" else ""
             str_monto = f" | 💰 S/ {str(row[col_monto]).strip()}" if col_monto in df.columns and pd.notna(row[col_monto]) and str(row[col_monto]).strip() != "" else ""
             
-            # --- LÓGICA DE ETIQUETAS MEJORADA (NO APTA VS SIN PUBLICAR) ---
             val_pub = str(row[col_pub]).strip().lower()
             val_req_actual = str(row[col_req]).strip().upper() if col_req in df.columns else ""
             
@@ -299,7 +347,6 @@ with tab1:
                         columnas = st.columns(len(archivos))
                         for i, archivo in enumerate(archivos):
                             ruta_foto_actual = os.path.join(carpeta, archivo)
-                            # === MINUATURA DE FOTO DE ANCHO FIJO (MÁS PEQUEÑA) ===
                             columnas[i].image(ruta_foto_actual, use_container_width=False, width=280)
                             
                             with open(ruta_foto_actual, "rb") as f:
@@ -309,7 +356,6 @@ with tab1:
                     
                     st.markdown("---")
                     
-                    # === NUEVA BOTONERA DOBLE: PUBLICACIÓN Y REQUISITOS ===
                     col_fechapub, col_btnpub, col_req_val, col_btnreq = st.columns([1.5, 1, 1.5, 1])
                     with col_fechapub:
                         nueva_fecha_pub = st.date_input("Fecha de Publicación", key=f"date_pub_{carpeta}_{index}")
@@ -629,31 +675,41 @@ with tab4:
             with st.chat_message(mensaje["rol"]):
                 st.markdown(mensaje["contenido"])
                 
-        pregunta_usuario = st.chat_input("Ejemplo: ¿Cuántas fotos de Tinka faltan publicar?")
+        pregunta_usuario = st.chat_input("Ejemplo: ¿Cuál es el producto con más fotos?")
         
         if pregunta_usuario:
             with st.chat_message("user"):
                 st.markdown(pregunta_usuario)
             st.session_state.mensajes_chat.append({"rol": "user", "contenido": pregunta_usuario})
             
-            datos_csv = df.to_csv(index=False)
-            prompt_contexto = f"""
-            Actúa como un experto analista de datos para la marca de lotería peruana 'La Tinka'.
-            A continuación te entrego la base de datos actualizada con los registros de ganadores y fotos subidas:
-            
-            {datos_csv}
-            
-            Reglas importantes para tus respuestas:
-            1. Responde basándote EXCLUSIVAMENTE en los datos de arriba.
-            2. Sé breve, amable, profesional y directo al grano.
-            3. Si te preguntan algo que no está en la tabla, di amablemente que no tienes esa información.
-            
-            Pregunta del usuario: {pregunta_usuario}
-            """
-            
             with st.chat_message("assistant"):
-                with st.spinner("Analizando la base de datos..."):
+                with st.spinner("Analizando datos optimizados..."):
                     try:
+                        # === OPTIMIZACIÓN EXTREMA DE VELOCIDAD ===
+                        df_ia = df.copy()
+                        # 1. Quitamos la columna de carpetas (rutas largas que no sirven para el análisis)
+                        if col_carpeta in df_ia.columns:
+                            df_ia = df_ia.drop(columns=[col_carpeta])
+                        
+                        # 2. Limitamos a los últimos 1000 registros para que el servidor no se quede congelado
+                        if len(df_ia) > 1000:
+                            df_ia = df_ia.tail(1000)
+                            
+                        # 3. Comprimimos los datos a JSON en lugar de usar CSV
+                        datos_comprimidos = df_ia.to_json(orient="records", date_format="iso")
+                        
+                        prompt_contexto = f"""
+                        Actúa como un experto analista de datos para la marca de lotería peruana 'La Tinka'.
+                        Aquí tienes la base de datos comprimida de registros recientes:
+                        {datos_comprimidos}
+                        
+                        Reglas:
+                        1. Responde basándote EXCLUSIVAMENTE en los datos entregados.
+                        2. Sé directo, breve y conciso.
+                        
+                        Pregunta del usuario: {pregunta_usuario}
+                        """
+                        
                         respuesta = modelo_ia.generate_content(prompt_contexto)
                         texto_respuesta = respuesta.text
                         st.markdown(texto_respuesta)
