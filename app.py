@@ -683,29 +683,33 @@ with tab4:
             st.session_state.mensajes_chat.append({"rol": "user", "contenido": pregunta_usuario})
             
             with st.chat_message("assistant"):
-                with st.spinner("Analizando datos optimizados..."):
+                with st.spinner("Analizando la base de datos..."):
                     try:
-                        # === OPTIMIZACIÓN EXTREMA DE VELOCIDAD ===
+                        # === DIETA ESTRICTA DE DATOS PARA EVITAR CONGELAMIENTO ===
                         df_ia = df.copy()
-                        # 1. Quitamos la columna de carpetas (rutas largas que no sirven para el análisis)
-                        if col_carpeta in df_ia.columns:
-                            df_ia = df_ia.drop(columns=[col_carpeta])
                         
-                        # 2. Limitamos a los últimos 1000 registros para que el servidor no se quede congelado
-                        if len(df_ia) > 1000:
-                            df_ia = df_ia.tail(1000)
+                        # 1. Eliminamos columnas pesadas que no sirven para análisis estadístico
+                        columnas_basura = [col_carpeta]
+                        if 'SUPERVISOR' in df_ia.columns: columnas_basura.append('SUPERVISOR')
+                        df_ia = df_ia.drop(columns=[c for c in columnas_basura if c in df_ia.columns])
+                        
+                        # 2. Límite de seguridad: Solo enviamos los 200 registros más recientes
+                        # (Más de 200 hace que la IA exceda su límite de lectura y se congele)
+                        if len(df_ia) > 200:
+                            df_ia = df_ia.tail(200)
                             
-                        # 3. Comprimimos los datos a JSON en lugar de usar CSV
-                        datos_comprimidos = df_ia.to_json(orient="records", date_format="iso")
+                        # 3. Volvemos al CSV que consume muchísimos menos "tokens" que el JSON
+                        datos_ligeros = df_ia.to_csv(index=False)
                         
                         prompt_contexto = f"""
                         Actúa como un experto analista de datos para la marca de lotería peruana 'La Tinka'.
-                        Aquí tienes la base de datos comprimida de registros recientes:
-                        {datos_comprimidos}
+                        Aquí tienes la base de datos (reducida a los registros más recientes para ahorrar memoria):
+                        
+                        {datos_ligeros}
                         
                         Reglas:
                         1. Responde basándote EXCLUSIVAMENTE en los datos entregados.
-                        2. Sé directo, breve y conciso.
+                        2. Sé directo, breve y conciso. Evita párrafos largos.
                         
                         Pregunta del usuario: {pregunta_usuario}
                         """
@@ -715,4 +719,4 @@ with tab4:
                         st.markdown(texto_respuesta)
                         st.session_state.mensajes_chat.append({"rol": "assistant", "contenido": texto_respuesta})
                     except Exception as e:
-                        st.error(f"Ocurrió un error al procesar la respuesta: {e}")
+                        st.error(f"La IA tardó demasiado en procesar o hubo un error: {e}")
