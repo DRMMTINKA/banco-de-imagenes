@@ -341,7 +341,6 @@ def renderizar_tarjeta_ganador(index, row, dataframe):
                     ruta_foto_actual = os.path.join(carpeta, archivo)
                     columnas[i].image(ruta_foto_actual, use_container_width=False, width=280)
                     
-                    # Generamos un identificador único para que los botones funcionen en la vista catálogo también
                     id_vista = str(st.session_state.get('vista_catalogo', False))
                     with open(ruta_foto_actual, "rb") as f:
                         columnas[i].download_button(label=f"⬇️ {archivo}", data=f, file_name=archivo, key=f"btn_{carpeta}_{archivo}_{index}_{id_vista}")
@@ -383,20 +382,20 @@ def renderizar_tarjeta_ganador(index, row, dataframe):
                     st.rerun()
 
 # --- ÁREA CENTRAL ---
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Base de Datos", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
+# Preparamos el dataframe de visualización global para las pestañas
+if col_fecha in df.columns:
+    df_mostrar = df.sort_values(by=col_fecha, ascending=False)
+else:
+    df_mostrar = df.iloc[::-1]
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📸 Fotos", "📊 Tabla de Registros", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
 
 # Inicializamos el estado de la vista de catálogo
 if "vista_catalogo" not in st.session_state:
     st.session_state["vista_catalogo"] = False
 
 with tab1:
-    if col_fecha in df.columns:
-        df_mostrar = df.sort_values(by=col_fecha, ascending=False)
-    else:
-        df_mostrar = df.iloc[::-1]
-        
     if not st.session_state["vista_catalogo"]:
-        # === VISTA ESTÁNDAR: ARCHIVOS RECIENTES ===
         st.subheader("📥 Archivos Recientes")
         
         if "num_fotos" not in st.session_state:
@@ -413,14 +412,12 @@ with tab1:
                 st.session_state["num_fotos"] += 5
                 st.rerun()
                 
-        # Mostrar el botón del Catálogo solo si ya expandieron al menos una vez
         if st.session_state["num_fotos"] > 5:
             if st.button("📂 VER CATÁLOGO COMPLETO", use_container_width=True, type="secondary"):
                 st.session_state["vista_catalogo"] = True
                 st.rerun()
                 
     else:
-        # === VISTA NUEVA: CATÁLOGO HISTÓRICO ===
         st.subheader("🗂️ Catálogo Histórico (Por Mes y Año)")
         if st.button("🔙 Volver a Archivos Recientes", use_container_width=True):
             st.session_state["vista_catalogo"] = False
@@ -433,7 +430,6 @@ with tab1:
             meses_espanol = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
                              7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
             
-            # Creamos una etiqueta "Mes Año" para agrupar
             df_cat['Periodo'] = df_cat[col_fecha].dt.month.map(meses_espanol) + " " + df_cat[col_fecha].dt.year.astype(str)
             periodos = df_cat['Periodo'].unique()
             
@@ -449,8 +445,7 @@ with tab1:
         else:
             st.info("No hay registros con fecha válida para agrupar.")
 
-    st.markdown("---")
-    
+with tab2:
     col_tit_tabla, col_btn_tabla = st.columns([4, 1])
     with col_tit_tabla:
         st.subheader("📊 Tabla de Registros")
@@ -471,7 +466,7 @@ with tab1:
 
     st.dataframe(df_mostrar.astype(str), use_container_width=True)
 
-with tab2:
+with tab3:
     st.subheader("📈 Panel de Estadísticas")
     
     color_naranja = "#FF5F00"
@@ -710,7 +705,7 @@ with tab2:
     else:
         st.warning("No hay datos para mostrar con estos filtros.")
 
-with tab3:
+with tab4:
     st.subheader("🏪 Gestor de Terminales")
     df_term_editado = st.data_editor(df_terminales, num_rows="dynamic", use_container_width=True)
     if st.button("💾 Guardar Cambios en Terminales"):
@@ -718,7 +713,7 @@ with tab3:
         sincronizar_con_github("terminales.csv", "terminales.csv", "Catálogo actualizado")
         st.success("¡Base de datos actualizada!")
 
-with tab4:
+with tab5:
     st.subheader("🤖 Asistente Analista de La Tinka")
     st.markdown("Pregúntame cualquier dato sobre los ganadores, montos, terminales o estados de publicación.")
     
