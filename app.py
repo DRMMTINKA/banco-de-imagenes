@@ -382,7 +382,6 @@ def renderizar_tarjeta_ganador(index, row, dataframe):
                     st.rerun()
 
 # --- ÁREA CENTRAL ---
-# Preparamos el dataframe de visualización global para las pestañas
 if col_fecha in df.columns:
     df_mostrar = df.sort_values(by=col_fecha, ascending=False)
 else:
@@ -390,7 +389,6 @@ else:
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📸 Fotos", "📊 Tabla de Registros", "📈 Estadísticas", "🏪 Maestro de Terminales", "🤖 Asistente IA"])
 
-# Inicializamos el estado de la vista de catálogo
 if "vista_catalogo" not in st.session_state:
     st.session_state["vista_catalogo"] = False
 
@@ -433,15 +431,51 @@ with tab1:
             df_cat['Periodo'] = df_cat[col_fecha].dt.month.map(meses_espanol) + " " + df_cat[col_fecha].dt.year.astype(str)
             periodos = df_cat['Periodo'].unique()
             
-            col_filtro, _ = st.columns([2, 1])
-            with col_filtro:
-                periodo_seleccionado = st.selectbox("📅 Elige un mes para ver las carpetas:", periodos)
+            # --- FILTROS Y MÉTRICAS DEL CATÁLOGO ---
+            col_f_mes, col_f_prod, col_m1, col_m2, col_m3 = st.columns([1.5, 1.5, 1, 1, 1])
+            
+            with col_f_mes:
+                periodo_seleccionado = st.selectbox("📅 Mes y Año:", periodos)
+                
+            with col_f_prod:
+                prods_disp = sorted([str(p) for p in df_cat[col_producto].unique() if str(p).strip() != ""]) if col_producto in df_cat.columns else []
+                prod_seleccionado = st.selectbox("🎟️ Filtrar por Producto:", ["Todos"] + prods_disp)
+                
+            # Filtramos la data temporal para los cálculos y mostrar
+            df_mes = df_cat[df_cat['Periodo'] == periodo_seleccionado]
+            if prod_seleccionado != "Todos":
+                df_mes = df_mes[df_mes[col_producto] == prod_seleccionado]
+                
+            # Calculamos métricas en vivo
+            total_mes = len(df_mes)
+            val_pub_res = df_mes[col_pub].astype(str).str.strip().str.lower()
+            es_no_publicado = val_pub_res.isin(["", "nan", "nat", "none"])
+            
+            if col_req in df_mes.columns:
+                req_limpios = df_mes[col_req].astype(str).str.strip().str.upper()
+                es_apto = (req_limpios != "NO")
+            else:
+                es_apto = pd.Series(True, index=df_mes.index)
+                
+            fotos_publicadas = (~es_no_publicado).sum()
+            fotos_pendientes = (es_no_publicado & es_apto).sum()
+
+            with col_m1:
+                st.metric("📁 Total Fotos", total_mes)
+            with col_m2:
+                st.metric("🟢 Publicadas", fotos_publicadas)
+            with col_m3:
+                st.metric("🔴 Sin Publicar", fotos_pendientes)
                 
             st.markdown("<br>", unsafe_allow_html=True)
             
-            df_mes = df_cat[df_cat['Periodo'] == periodo_seleccionado]
-            for index, row in df_mes.iterrows():
-                renderizar_tarjeta_ganador(index, row, df)
+            # Renderizamos las tarjetas filtradas
+            if total_mes > 0:
+                for index, row in df_mes.iterrows():
+                    renderizar_tarjeta_ganador(index, row, df)
+            else:
+                st.info(f"No hay registros de '{prod_seleccionado}' para el mes de {periodo_seleccionado}.")
+                
         else:
             st.info("No hay registros con fecha válida para agrupar.")
 
